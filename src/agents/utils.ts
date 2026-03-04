@@ -36,20 +36,23 @@ declare const __AGENT_PROMPTS__: Record<string, string> | undefined;
  * fall back to __dirname which is natively available in CJS.
  */
 function getPackageDir(): string {
-  // CJS bundle path (bridge/cli.cjs): from bridge/ go up 1 level to package root
-  if (typeof __dirname !== 'undefined') {
-    return join(__dirname, '..');
-  }
-  // ESM path (works in dev via ts/dist)
+  // ESM path (works in dev via ts/dist) - preferred for reliability
   try {
     const __filename = fileURLToPath(import.meta.url);
     const __dirname = dirname(__filename);
     // From src/agents/ or dist/agents/ go up to package root
     return join(__dirname, '..', '..');
   } catch {
-    // import.meta.url unavailable — last resort
-    return process.cwd();
+    // import.meta.url unavailable — fall back to CJS path
   }
+
+  // CJS bundle path (bridge/cli.cjs): from bridge/ go up 1 level to package root
+  if (typeof __dirname !== 'undefined' && __dirname) {
+    return join(__dirname, '..');
+  }
+
+  // Last resort
+  return process.cwd();
 }
 
 /**

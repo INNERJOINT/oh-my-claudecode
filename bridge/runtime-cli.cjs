@@ -720,16 +720,16 @@ var import_url = require("url");
 // src/agents/prompt-helpers.ts
 var import_meta = {};
 function getPackageDir() {
-  if (typeof __dirname !== "undefined") {
-    return (0, import_path4.join)(__dirname, "..");
-  }
   try {
     const __filename = (0, import_url2.fileURLToPath)(import_meta.url);
     const __dirname2 = (0, import_path4.dirname)(__filename);
     return (0, import_path4.join)(__dirname2, "..", "..");
   } catch {
-    return process.cwd();
   }
+  if (typeof __dirname !== "undefined" && __dirname) {
+    return (0, import_path4.join)(__dirname, "..");
+  }
+  return process.cwd();
 }
 var _cachedRoles = null;
 function getValidAgentRoles() {

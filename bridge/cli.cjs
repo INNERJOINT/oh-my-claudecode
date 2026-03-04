@@ -22380,16 +22380,16 @@ var import_fs3 = require("fs");
 var import_path3 = require("path");
 var import_url = require("url");
 function getPackageDir() {
-  if (typeof __dirname !== "undefined") {
-    return (0, import_path3.join)(__dirname, "..");
-  }
   try {
     const __filename5 = (0, import_url.fileURLToPath)(importMetaUrl);
     const __dirname4 = (0, import_path3.dirname)(__filename5);
     return (0, import_path3.join)(__dirname4, "..", "..");
   } catch {
-    return process.cwd();
   }
+  if (typeof __dirname !== "undefined" && __dirname) {
+    return (0, import_path3.join)(__dirname, "..");
+  }
+  return process.cwd();
 }
 function stripFrontmatter(content) {
   const match = content.match(/^---[\s\S]*?---\s*([\s\S]*)$/);
@@ -55181,16 +55181,16 @@ var import_fs42 = require("fs");
 var import_path46 = require("path");
 var import_url9 = require("url");
 function getPackageDir4() {
-  if (typeof __dirname !== "undefined") {
-    return (0, import_path46.join)(__dirname, "..");
-  }
   try {
     const __filename5 = (0, import_url9.fileURLToPath)(importMetaUrl);
     const __dirname4 = (0, import_path46.dirname)(__filename5);
     return (0, import_path46.join)(__dirname4, "..", "..");
   } catch {
-    return process.cwd();
   }
+  if (typeof __dirname !== "undefined" && __dirname) {
+    return (0, import_path46.join)(__dirname, "..");
+  }
+  return process.cwd();
 }
 var _cachedRoles = null;
 function getValidAgentRoles() {
