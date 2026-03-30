@@ -186,7 +186,7 @@ Multiple strategies for different use cases — from Team-backed orchestration t
 
 ### Intelligent Orchestration
 
-- **32 specialized agents** for architecture, research, design, testing, data science
+- **19 specialized agents** (with tier variants) for architecture, research, design, testing, data science
 - **Smart model routing** - Haiku for simple tasks, Opus for complex reasoning
 - **Automatic delegation** - Right agent for the job, every time
 
