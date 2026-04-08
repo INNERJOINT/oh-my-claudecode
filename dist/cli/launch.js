@@ -6,7 +6,10 @@ import { execFileSync } from 'child_process';
 import { cpSync, copyFileSync, existsSync, lstatSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync, } from 'fs';
 import { homedir } from 'os';
 import { basename, join } from 'path';
+import { resolvePluginDirArg } from '../lib/plugin-dir.js';
 import { resolveLaunchPolicy, buildTmuxSessionName, buildTmuxShellCommand, wrapWithLoginShell, isClaudeAvailable, quoteShellArg, } from './tmux-utils.js';
+import { OMC_PLUGIN_ROOT_ENV } from '../lib/env-vars.js';
+import { OMC_CONFIG_FILE_REL } from '../lib/paths.js';
 // Flag mapping
 const MADMAX_FLAG = '--madmax';
 const YOLO_FLAG = '--yolo';
@@ -70,7 +73,7 @@ export function prepareOmcLaunchConfigDir(baseConfigDir = process.env.CLAUDE_CON
         'projects',
         'rules',
         'skills',
-        '.omc-config.json',
+        OMC_CONFIG_FILE_REL,
         '.omc-version.json',
         '.omc-silent-update.json',
         'keybindings.json',
@@ -375,6 +378,7 @@ export const TMUX_ENV_FORWARD = [
     'OMC_DISCORD',
     'OMC_SLACK',
     'OMC_WEBHOOK',
+    OMC_PLUGIN_ROOT_ENV,
 ];
 export function buildEnvExportPrefix(vars) {
     const parts = [];
@@ -463,7 +467,38 @@ export async function postLaunch(_cwd, _sessionId) {
  * Main launch command entry point
  * Orchestrates the 3-phase launch: preLaunch -> run -> postLaunch
  */
+/**
+ * Parse `--plugin-dir <path>` / `--plugin-dir=<path>` from launch args (non-consuming).
+ *
+ * Returns the resolved absolute path if found, or null. The flag is NOT removed
+ * from `args` — it must still forward to Claude Code's plugin loader untouched.
+ */
+export function parsePluginDirArg(args) {
+    for (let i = 0; i < args.length; i++) {
+        const a = args[i];
+        if (a === '--plugin-dir') {
+            const next = args[i + 1];
+            if (typeof next === 'string' && next.length > 0) {
+                return resolvePluginDirArg(next);
+            }
+        }
+        else if (typeof a === 'string' && a.startsWith('--plugin-dir=')) {
+            const value = a.slice('--plugin-dir='.length);
+            if (value.length > 0) {
+                return resolvePluginDirArg(value);
+            }
+        }
+    }
+    return null;
+}
 export async function launchCommand(args) {
+    // Capture --plugin-dir <path> so the HUD wrapper (and any other env-aware
+    // child of Claude Code) can resolve the active plugin root via OMC_PLUGIN_ROOT.
+    // Non-consuming: the flag still flows through to Claude Code untouched.
+    const pluginDir = parsePluginDirArg(args);
+    if (pluginDir) {
+        process.env[OMC_PLUGIN_ROOT_ENV] = pluginDir;
+    }
     // Extract OMC-specific --notify flag before passing remaining args to Claude CLI
     const { notifyEnabled, remainingArgs } = extractNotifyFlag(args);
     if (!notifyEnabled) {

@@ -32,6 +32,10 @@
 /omc-setup
 ```
 
+`omc --plugin-dir <path>` 또는 `claude --plugin-dir <path>`를 통해 OMC를 실행하는 경우 `omc setup`에 `--plugin-dir-mode`를 추가합니다(또는 미리 `OMC_PLUGIN_ROOT` 내보내기). 이렇게 하면 플러그인이 이미 런타임에 제공하는 스킬/에이전트가 중복되지 않습니다. 완전한 결정 매트릭스 및 사용 가능한 모든 플래그는 [REFERENCE.md의 Plugin directory flags 섹션](./docs/REFERENCE.md#plugin-directory-flags)을 참조하세요.
+
+<!-- TODO(i18n): verify translation -->
+
 **Step 3: 무언가 만들기**
 ```
 autopilot: build a REST API for managing tasks
@@ -169,8 +173,17 @@ omc team shutdown auth-review
 
 - **매직 키워드** - 명시적 제어를 위한 `ralph`, `ulw`, `team`
 - **HUD 상태바** - 상태바에서 실시간 오케스트레이션 메트릭 확인
+  - Claude Code를 `claude --plugin-dir <path>`로 직접 시작하는 경우 (OMC shim 우회), shell에서 `OMC_PLUGIN_ROOT=<path>`를 내보내 HUD 번들이 plugin 로더와 동일한 checkout으로 확인되도록 하세요. 자세한 내용은 [REFERENCE.md의 Plugin directory flags 섹션](./docs/REFERENCE.md#plugin-directory-flags)을 참조하세요.
+
+  <!-- TODO(i18n): verify translation -->
 - **스킬 학습** - 세션에서 재사용 가능한 패턴 추출
 - **분석 및 비용 추적** - 모든 세션의 토큰 사용량 이해
+
+### 기여
+
+OMC에 기여하고 싶으신가요? [CONTRIBUTING.md](./CONTRIBUTING.md)에서 포킹, 로컬 checkout 설정, 활성 플러그인으로 연결, 테스트 실행, PR 제출 등을 포함한 완전한 개발자 가이드를 참조하세요.
+
+<!-- TODO(i18n): verify translation -->
 
 ### 커스텀 스킬
 

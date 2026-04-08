@@ -122,6 +122,16 @@ This checks the following:
 - Agent availability
 - Skill registration status
 
+### Running from a local checkout
+
+If you're developing OMC or want to test unreleased features from a specific branch, you can launch Claude Code with your local checkout as the plugin:
+
+```bash
+omc --plugin-dir /path/to/oh-my-claudecode setup --plugin-dir-mode
+```
+
+This loads agents, skills, and commands directly from your checkout without copying them to `~/.claude/`. For detailed instructions and alternative flows, see [LOCAL_PLUGIN_INSTALL.md](./LOCAL_PLUGIN_INSTALL.md). For a complete decision matrix of plugin-dir flags and modes, see the [Plugin directory flags section in REFERENCE.md](./REFERENCE.md#plugin-directory-flags).
+
 ### Platform support
 
 | Platform | Installation | Hook type |

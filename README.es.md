@@ -32,6 +32,10 @@
 /omc-setup
 ```
 
+Si ejecuta OMC mediante `omc --plugin-dir <path>` o `claude --plugin-dir <path>`, agregue `--plugin-dir-mode` a `omc setup` (o exporte `OMC_PLUGIN_ROOT` antes) para evitar duplicar habilidades/agentes que el complemento ya proporciona en tiempo de ejecución. Consulte la [sección Plugin directory flags en REFERENCE.md](./docs/REFERENCE.md#plugin-directory-flags) para una matriz de decisión completa y todos los indicadores disponibles.
+
+<!-- TODO(i18n): verify translation -->
+
 **Paso 3: Construye algo**
 ```
 autopilot: build a REST API for managing tasks

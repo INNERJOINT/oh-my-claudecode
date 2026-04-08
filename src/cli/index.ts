@@ -54,6 +54,7 @@ import {
 } from './commands/teleport.js';
 
 import { getRuntimePackageVersion } from '../lib/version.js';
+import { resolvePluginDirArg } from '../lib/plugin-dir.js';
 import { launchCommand } from './launch.js';
 import { interopCommand } from './interop.js';
 import { askCommand, ASK_USAGE } from './ask.js';
@@ -62,6 +63,33 @@ import { autoresearchCommand } from './autoresearch.js';
 import { runHudWatchLoop } from './hud-watch.js';
 
 const version = getRuntimePackageVersion();
+
+/**
+ * Apply a --plugin-dir option value: resolve to absolute path, warn if it
+ * disagrees with a pre-existing OMC_PLUGIN_ROOT env var, then set the env var
+ * so all subsequent code in this process sees the correct plugin root.
+ *
+ * No-op when `rawPath` is undefined/empty (option was not passed).
+ */
+export function applyPluginDirOption(rawPath: string | undefined): void {
+  if (!rawPath) return;
+  let resolved: string;
+  try {
+    resolved = resolvePluginDirArg(rawPath);
+  } catch (err) {
+    console.error(chalk.red(`Error: ${err instanceof Error ? err.message : String(err)}`));
+    process.exit(1);
+  }
+  const existing = process.env[OMC_PLUGIN_ROOT_ENV];
+  if (existing && existing !== resolved) {
+    console.warn(
+      chalk.yellow(
+        `Warning: --plugin-dir "${resolved}" overrides ${OMC_PLUGIN_ROOT_ENV}="${existing}"`
+      )
+    );
+  }
+  process.env[OMC_PLUGIN_ROOT_ENV] = resolved;
+}
 
 const program = new Command();
 
@@ -1143,19 +1171,27 @@ sessionCmd
 const doctorCmd = program
   .command('doctor')
   .description('Diagnostic tools for troubleshooting OMC installation')
+  .option('--plugin-dir <path>', 'Override OMC plugin root directory (sets OMC_PLUGIN_ROOT)')
   .addHelpText('after', `
 Examples:
-  $ omc doctor conflicts         Check for plugin conflicts`);
+  $ omc doctor conflicts                        Check for plugin conflicts
+  $ omc doctor --plugin-dir /path/to/plugin     Run diagnostics against a specific plugin dir`)
+  .hook('preAction', (thisCommand) => {
+    applyPluginDirOption(thisCommand.opts().pluginDir as string | undefined);
+  });
 
 doctorCmd
   .command('conflicts')
   .description('Check for plugin coexistence issues and configuration conflicts')
   .option('--json', 'Output as JSON')
+  .option('--plugin-dir <path>', 'Override OMC plugin root directory (sets OMC_PLUGIN_ROOT)')
   .addHelpText('after', `
 Examples:
-  $ omc doctor conflicts         Check for configuration issues
-  $ omc doctor conflicts --json  Output results as JSON`)
+  $ omc doctor conflicts                        Check for configuration issues
+  $ omc doctor conflicts --json                 Output results as JSON
+  $ omc doctor conflicts --plugin-dir /tmp/foo  Check against a specific plugin dir`)
   .action(async (options) => {
+    applyPluginDirOption(options.pluginDir);
     const exitCode = await doctorConflictsCommand(options);
     process.exit(exitCode);
   });

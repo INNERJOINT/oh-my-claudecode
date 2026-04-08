@@ -32,6 +32,10 @@ _Claude Code'u öğrenmeyin. Sadece OMC kullanın._
 /oh-my-claudecode:omc-setup
 ```
 
+OMC'yi `omc --plugin-dir <path>` veya `claude --plugin-dir <path>` aracılığıyla çalıştırıyorsanız, `omc setup`'a `--plugin-dir-mode` ekleyin (veya `OMC_PLUGIN_ROOT`'u önceden dışa aktarın) böylece plugin zaten çalışma zamanında sağlayan beceri/ajanları duplike etmez. Tam karar matrisi ve mevcut tüm bayraklar için [REFERENCE.md'deki Plugin directory flags bölümüne](./docs/REFERENCE.md#plugin-directory-flags) bakın.
+
+<!-- TODO(i18n): verify translation -->
+
 **Adım 3: Bir şey oluşturun**
 
 ```
@@ -129,8 +133,17 @@ Farklı kullanım senaryoları için birden fazla strateji — Team destekli ork
 
 - **Sihirli anahtar kelimeler** — Açık kontrol için `ralph`, `ulw`, `eco`, `plan`
 - **HUD statusline** — Durum çubuğunuzda gerçek zamanlı orkestrasyon metrikleri
+  - Claude Code'u doğrudan `claude --plugin-dir <path>` ile başlatıyorsanız (`omc` shim'i atlayarak), shell'de `OMC_PLUGIN_ROOT=<path>` dışa aktarın, böylece HUD paketi plugin yükleyici ile aynı checkout'a çözülür. Ayrıntılar için [REFERENCE.md'deki Plugin directory flags bölümüne](./docs/REFERENCE.md#plugin-directory-flags) bakın.
+
+  <!-- TODO(i18n): verify translation -->
 - **Beceri öğrenimi** — Oturumlarınızdan yeniden kullanılabilir kalıplar çıkarın
 - **Analitik ve maliyet takibi** — Tüm oturumlardaki token kullanımını anlayın
+
+### Katkıda Bulunma
+
+OMC'ye katkıda bulunmak ister misiniz? Fork etme, yerel checkout kurma, etkin eklenti olarak bağlama, testleri çalıştırma ve PR gönderme dahil olmak üzere tam geliştirici kılavuzu için [CONTRIBUTING.md](./CONTRIBUTING.md)'ye bakın.
+
+<!-- TODO(i18n): verify translation -->
 
 ### Özel Beceriler
 

@@ -695,11 +695,14 @@ describe('launchCommand — env var propagation', () => {
 describe('prepareOmcLaunchConfigDir / launchCommand OMC companion loading', () => {
     const originalClaudeConfigDir = process.env.CLAUDE_CONFIG_DIR;
     let tempRoot = null;
+    const originalClaudeCode = process.env.CLAUDECODE;
     beforeEach(() => {
         vi.resetAllMocks();
         tempRoot = mkdtempSync(join(tmpdir(), 'omc-launch-profile-'));
         execFileSync.mockReturnValue(Buffer.from(''));
         resolveLaunchPolicy.mockReturnValue('direct');
+        // Clear CLAUDECODE to avoid "already inside CC session" exit
+        delete process.env.CLAUDECODE;
     });
     afterEach(() => {
         if (tempRoot) {
@@ -711,6 +714,12 @@ describe('prepareOmcLaunchConfigDir / launchCommand OMC companion loading', () =
         }
         else {
             process.env.CLAUDE_CONFIG_DIR = originalClaudeConfigDir;
+        }
+        if (originalClaudeCode === undefined) {
+            delete process.env.CLAUDECODE;
+        }
+        else {
+            process.env.CLAUDECODE = originalClaudeCode;
         }
     });
     it('uses a runtime launch profile when a preserved CLAUDE-omc.md companion exists', async () => {
@@ -938,6 +947,7 @@ describe('runClaude outside-tmux — env forwarding', () => {
         delete process.env.OMC_DISCORD;
         delete process.env.OMC_SLACK;
         delete process.env.OMC_WEBHOOK;
+        delete process.env.OMC_PLUGIN_ROOT;
         runClaude('/tmp', [], 'sid');
         const cmdString = vi.mocked(wrapWithLoginShell).mock.calls[0][0];
         expect(cmdString).not.toContain('export ');

@@ -95,7 +95,7 @@ describe('package dir resolution regression (#1322, #1324)', () => {
     expect(snippet).toContain('fileURLToPath(import.meta.url)');
     expect(snippet).toContain('currentDirName === "bridge"');
     expect(snippet.indexOf('fileURLToPath(import.meta.url)')).toBeLessThan(
-      snippet.indexOf('return join6(__dirname2, "..", "..")'),
+      snippet.indexOf('return join7(__dirname2, "..", "..")'),
     );
   });
 

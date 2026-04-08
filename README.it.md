@@ -32,6 +32,10 @@ _Non imparare Claude Code. Usa semplicemente OMC._
 /oh-my-claudecode:omc-setup
 ```
 
+Se esegui OMC tramite `omc --plugin-dir <path>` o `claude --plugin-dir <path>`, aggiungi `--plugin-dir-mode` a `omc setup` (o esporta `OMC_PLUGIN_ROOT` prima) per evitare di duplicare abilità/agenti che il plugin fornisce già in fase di esecuzione. Consulta la [sezione Plugin directory flags in REFERENCE.md](./docs/REFERENCE.md#plugin-directory-flags) per una matrice decisionale completa e tutti i flag disponibili.
+
+<!-- TODO(i18n): verify translation -->
+
 **Passo 3: Costruisci qualcosa**
 
 ```

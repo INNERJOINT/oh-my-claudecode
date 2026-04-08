@@ -18170,10 +18170,16 @@ function safeRealpath(p) {
   try {
     return (0, import_fs2.realpathSync)(p);
   } catch {
-    const parent = (0, import_path2.dirname)(p);
-    const name = (0, import_path2.basename)(p);
+    const segments = [];
+    let current = (0, import_path2.resolve)(p);
+    while (!(0, import_fs2.existsSync)(current)) {
+      segments.unshift((0, import_path2.basename)(current));
+      const parent = (0, import_path2.dirname)(current);
+      if (parent === current) break;
+      current = parent;
+    }
     try {
-      return (0, import_path2.resolve)((0, import_fs2.realpathSync)(parent), name);
+      return (0, import_path2.join)((0, import_fs2.realpathSync)(current), ...segments);
     } catch {
       return (0, import_path2.resolve)(p);
     }

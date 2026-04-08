@@ -9,7 +9,7 @@
  *   - Native git worktrees (git worktree add) — issue #1191
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdirSync, writeFileSync, rmSync } from 'fs';
+import { mkdirSync, writeFileSync, rmSync, realpathSync } from 'fs';
 import { execSync } from 'child_process';
 import { join } from 'path';
 import { tmpdir } from 'os';
@@ -97,6 +97,7 @@ describe('resolveTranscriptPath', () => {
             // Create a real git repo with a linked worktree
             mainRepoDir = join(tempDir, 'main-repo');
             mkdirSync(mainRepoDir, { recursive: true });
+            mainRepoDir = realpathSync(mainRepoDir); // resolve symlinks (macOS: /var -> /private/var)
             execSync('git init', { cwd: mainRepoDir, stdio: 'pipe' });
             execSync('git commit --allow-empty -m "init"', {
                 cwd: mainRepoDir,
@@ -107,7 +108,7 @@ describe('resolveTranscriptPath', () => {
                     GIT_COMMITTER_NAME: 'test', GIT_COMMITTER_EMAIL: 'test@test.com',
                 },
             });
-            worktreeDir = join(tempDir, 'linked-worktree');
+            worktreeDir = join(realpathSync(tempDir), 'linked-worktree');
             execSync(`git worktree add "${worktreeDir}" -b test-branch`, {
                 cwd: mainRepoDir,
                 stdio: 'pipe',

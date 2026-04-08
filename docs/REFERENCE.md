@@ -8,6 +8,7 @@ Complete reference for oh-my-claudecode. For quick start, see the main [README.m
 
 - [Installation](#installation)
 - [Configuration](#configuration)
+- [Plugin directory flags](#plugin-directory-flags)
 - [CLI Commands: ask/team/session](#cli-commands-askteamsession)
 - [Legacy MCP Team Runtime Tools (Deprecated)](#legacy-mcp-team-runtime-tools-deprecated)
 - [Agents (29 Total)](#agents-29-total)
@@ -215,6 +216,96 @@ Tag behavior:
 - Telegram: `alice` is normalized to `@alice`
 - Discord: supports `@here`, `@everyone`, numeric user IDs (`<@id>`), and role tags (`role:<id>` -> `<@&id>`)
 - `file` callbacks ignore tag options
+
+---
+
+## Plugin directory flags
+
+When you launch OMC via a local development checkout instead of the marketplace plugin, you can configure how OMC discovers agents, skills, and commands.
+
+> **Recommended for local development**: Use `omc --plugin-dir <path>` (paired with `omc setup --plugin-dir-mode`). Unlike `claude plugin marketplace add`, this flow loads agents/skills directly from your checkout with **no plugin cache**, so edits are picked up on the next session without `marketplace update` / `plugin update` round-trips — much faster iteration.
+
+### `omc --plugin-dir <path>`
+
+**Usage**: Non-consuming launcher flag that captures your local checkout path.
+
+```bash
+omc --plugin-dir /path/to/oh-my-claudecode setup --plugin-dir-mode
+```
+
+- **What it does**: Parses `--plugin-dir <path>` (or `--plugin-dir=<path>`), resolves it to an absolute path, sets `OMC_PLUGIN_ROOT` environment variable, then passes the flag through to Claude Code untouched.
+- **Non-consuming**: The flag stays in the argument list so Claude Code's plugin loader still sees it.
+- **Precedence**: Explicit `--plugin-dir` flag wins over any pre-existing `OMC_PLUGIN_ROOT` env var (with a warning if they disagree).
+- **Resolution**: Relative paths are resolved to absolute via `path.resolve()`. Note: `~` is **not** expanded — use `$HOME` or an absolute path instead.
+- **Pair with setup**: `--plugin-dir` alone only affects the current Claude session. You must **also** run `omc setup --plugin-dir-mode` (or let auto-detection kick in from `OMC_PLUGIN_ROOT`) so HUD, hooks, and CLAUDE.md are installed for the linked checkout. Skipping this step leaves `~/.claude/` pointing at a stale plugin root.
+
+### `claude --plugin-dir <path>` (direct)
+
+**Usage**: When you launch Claude Code directly without the `omc` shim.
+
+```bash
+export OMC_PLUGIN_ROOT=/path/to/oh-my-claudecode
+claude --plugin-dir /path/to/oh-my-claudecode
+```
+
+- **Requirement**: You must manually set `OMC_PLUGIN_ROOT` environment variable so the HUD wrapper and other env-aware components can resolve the same path as the plugin loader.
+- **Why**: The HUD bundle needs to know where agents/skills/commands are located so they stay in sync with the plugin instance.
+- **Note**: Plain `claude` (without `omc`) does not automatically capture `--plugin-dir` for you.
+
+### `omc setup --plugin-dir-mode`
+
+**Usage**: Explicit flag to enable dev plugin-dir mode during setup.
+
+```bash
+omc setup --plugin-dir-mode
+```
+
+- **What it does**: Skips copying agents and bundled skills into `~/.claude/` because the plugin already provides them at runtime via `--plugin-dir`.
+- **Still installs**:
+  - HUD bundle (`~/.claude/hud/`)
+  - Git hooks (`.git/hooks/`, if applicable)
+  - CLAUDE.md configuration files
+  - `.omc-config.json` state
+- **Conflicts with `--no-plugin`**: If both flags are set, `--no-plugin` takes precedence (with a warning).
+- **Auto-detection**: If `OMC_PLUGIN_ROOT` is already set in the environment, `--plugin-dir-mode` is auto-enabled (unless `--no-plugin` overrides it).
+
+### `omc doctor --plugin-dir <path>` (NEW)
+
+**Usage**: Run diagnostics with a specific plugin directory.
+
+```bash
+omc doctor --plugin-dir /path/to/oh-my-claudecode
+omc doctor conflicts --plugin-dir /path/to/oh-my-claudecode
+```
+
+- **What it does**: Resolves the provided path to absolute, sets `OMC_PLUGIN_ROOT` before the doctor action runs, matching `launch.ts` semantics.
+- **Precedence**: Explicit `--plugin-dir` flag wins over pre-existing `OMC_PLUGIN_ROOT` env var (with a warning if they disagree).
+- **Subcommand support**: Works with both `omc doctor` and `omc doctor conflicts`.
+- **Output**: Diagnostic results reflect the plugin directory you specified.
+
+### `OMC_PLUGIN_ROOT` environment variable
+
+**Usage**: Authoritative source for the active plugin root when launching Claude Code.
+
+```bash
+export OMC_PLUGIN_ROOT=/path/to/oh-my-claudecode
+claude --plugin-dir /path/to/oh-my-claudecode
+```
+
+- **Set by**: `omc --plugin-dir <path>` launcher (via `src/cli/launch.ts`).
+- **Read by**: HUD wrapper, setup auto-detect, doctor diagnostics.
+- **Required when**: Using `claude --plugin-dir` directly (without the `omc` shim), so downstream components can resolve the same path.
+- **Precedence**: Explicit CLI flags override this env var (with warnings).
+
+### Decision matrix: which flag/mode to use?
+
+| Your setup | Launch command | Setup command | Expected behavior |
+|---|---|---|---|
+| **Marketplace plugin** (recommended) | `omc` or `claude` (default) | `omc setup` | Normal: agents/skills copied to `~/.claude/` |
+| **Local dev checkout, want OMC shim** | `omc --plugin-dir /path` | `omc setup --plugin-dir-mode` | Dev mode: agents/skills loaded from `/path`, not copied |
+| **Local dev checkout, no OMC shim** | `claude --plugin-dir /path` + `export OMC_PLUGIN_ROOT=/path` | `omc setup --plugin-dir-mode` | Dev mode + manual env: agents/skills loaded from `/path` |
+| **Local dev, want bundled skills** | `omc --plugin-dir /path` | `omc setup --no-plugin` | Forces local bundled skills to `~/.claude/skills/`, ignoring plugin |
+| **Troubleshooting a specific path** | N/A | `omc doctor --plugin-dir /path` | Diagnostics show status for `/path` |
 
 ---
 

@@ -145,5 +145,12 @@ export declare function postLaunch(_cwd: string, _sessionId: string): Promise<vo
  * Main launch command entry point
  * Orchestrates the 3-phase launch: preLaunch -> run -> postLaunch
  */
+/**
+ * Parse `--plugin-dir <path>` / `--plugin-dir=<path>` from launch args (non-consuming).
+ *
+ * Returns the resolved absolute path if found, or null. The flag is NOT removed
+ * from `args` — it must still forward to Claude Code's plugin loader untouched.
+ */
+export declare function parsePluginDirArg(args: string[]): string | null;
 export declare function launchCommand(args: string[]): Promise<void>;
 //# sourceMappingURL=launch.d.ts.map

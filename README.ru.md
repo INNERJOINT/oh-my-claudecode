@@ -32,6 +32,10 @@ _Не изучайте Claude Code. Просто используйте OMC._
 /oh-my-claudecode:omc-setup
 ```
 
+Если вы запускаете OMC через `omc --plugin-dir <path>` или `claude --plugin-dir <path>`, добавьте `--plugin-dir-mode` к `omc setup` (или экспортируйте `OMC_PLUGIN_ROOT` заранее) чтобы избежать дублирования умений/агентов, которые плагин уже предоставляет во время выполнения. Полную матрицу решений и все доступные флаги см. в [разделе Plugin directory flags в REFERENCE.md](./docs/REFERENCE.md#plugin-directory-flags).
+
+<!-- TODO(i18n): verify translation -->
+
 **Шаг 3: Создайте что-нибудь**
 
 ```
@@ -129,8 +133,17 @@ Team работает как поэтапный pipeline:
 
 - **Магические ключевые слова** — `ralph`, `ulw`, `eco`, `plan` для явного управления
 - **HUD statusline** — Метрики оркестрации в реальном времени в строке состояния
+  - Если вы запускаете Claude Code напрямую с `claude --plugin-dir <path>` (минуя shim `omc`), экспортируйте `OMC_PLUGIN_ROOT=<path>` в своей оболочке, чтобы пакет HUD разрешался в то же место, что и загрузчик плагина. Подробнее см. [раздел Plugin directory flags в REFERENCE.md](./docs/REFERENCE.md#plugin-directory-flags).
+
+  <!-- TODO(i18n): verify translation -->
 - **Обучение навыкам** — Извлечение переиспользуемых паттернов из сессий
 - **Аналитика и отслеживание затрат** — Понимание использования токенов по всем сессиям
+
+### Внесение вклада
+
+Хотите внести вклад в OMC? См. [CONTRIBUTING.md](./CONTRIBUTING.md) для полного руководства разработчика, включая как форкировать, настроить локальный checkout, связать его как активный плагин, запустить тесты и отправить PR.
+
+<!-- TODO(i18n): verify translation -->
 
 ### Пользовательские навыки
 

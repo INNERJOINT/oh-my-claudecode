@@ -32,6 +32,10 @@ _N'apprenez pas Claude Code. Utilisez simplement OMC._
 /oh-my-claudecode:omc-setup
 ```
 
+Si vous exécutez OMC via `omc --plugin-dir <path>` ou `claude --plugin-dir <path>`, ajoutez `--plugin-dir-mode` à `omc setup` (ou exportez `OMC_PLUGIN_ROOT` auparavant) pour éviter de dupliquer les compétences/agents que le plugin fournit déjà au moment de l'exécution. Consultez la [section Plugin directory flags dans REFERENCE.md](./docs/REFERENCE.md#plugin-directory-flags) pour une matrice de décision complète et tous les indicateurs disponibles.
+
+<!-- TODO(i18n): verify translation -->
+
 **Étape 3 : Construisez quelque chose**
 
 ```
@@ -129,8 +133,17 @@ Plusieurs stratégies pour différents cas d'utilisation — de l'orchestration 
 
 - **Mots-clés magiques** — `ralph`, `ulw`, `eco`, `plan` pour un contrôle explicite
 - **HUD statusline** — Métriques d'orchestration en temps réel dans votre barre d'état
+  - Si vous lancez Claude Code directement avec `claude --plugin-dir <path>` (en contournant le shim `omc`), exportez `OMC_PLUGIN_ROOT=<path>` dans votre shell afin que le bundle HUD se résolve vers le même checkout que le chargeur de plugin. Voir [la section Plugin directory flags dans REFERENCE.md](./docs/REFERENCE.md#plugin-directory-flags) pour les détails.
+
+  <!-- TODO(i18n): verify translation -->
 - **Apprentissage de compétences** — Extraction de patterns réutilisables depuis vos sessions
 - **Analytique et suivi des coûts** — Compréhension de l'utilisation des tokens sur toutes les sessions
+
+### Contribuer
+
+Vous souhaitez contribuer à OMC ? Voir [CONTRIBUTING.md](./CONTRIBUTING.md) pour le guide complet du développeur, incluant comment faire un fork, configurer un checkout local, le lier en tant que plugin actif, exécuter des tests et soumettre des PR.
+
+<!-- TODO(i18n): verify translation -->
 
 ### Compétences Personnalisées
 

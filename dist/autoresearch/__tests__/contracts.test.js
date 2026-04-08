@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
+import { realpathSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -70,7 +71,7 @@ Stay in bounds.
         expect(() => parseEvaluatorResult('{"pass":true,"score":"high"}')).toThrow(/score must be numeric/i);
     });
     it('loads mission contract from in-repo mission directory', async () => {
-        const repo = await initRepo();
+        const repo = realpathSync(await initRepo());
         try {
             const missionDir = join(repo, 'missions', 'demo');
             await mkdir(missionDir, { recursive: true });

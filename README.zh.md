@@ -32,6 +32,10 @@
 /omc-setup
 ```
 
+如果你通过 `omc --plugin-dir <path>` 或 `claude --plugin-dir <path>` 运行 OMC，请在 `omc setup` 中添加 `--plugin-dir-mode`（或提前导出 `OMC_PLUGIN_ROOT`），以避免复制插件在运行时已经提供的技能/代理。有关完整的决策矩阵和所有可用标志，请参阅 [REFERENCE.md 中的 Plugin directory flags 部分](./docs/REFERENCE.md#plugin-directory-flags)。
+
+<!-- TODO(i18n): verify translation -->
+
 **第三步：开始构建**
 ```
 autopilot: build a REST API for managing tasks
@@ -165,8 +169,17 @@ Team 按阶段化流水线运行：
 
 - **魔法关键词** - `ralph`、`ulw`、`plan` 提供显式控制
 - **HUD 状态栏** - 状态栏实时显示编排指标
+  - 如果你直接使用 `claude --plugin-dir <path>` 启动 Claude Code（绕过 `omc` shim），请在 shell 中导出 `OMC_PLUGIN_ROOT=<path>`，以便 HUD bundle 解析到与插件加载器相同的 checkout。详情见 [REFERENCE.md 中的 Plugin directory flags 部分](./docs/REFERENCE.md#plugin-directory-flags)。
+
+  <!-- TODO(i18n): verify translation -->
 - **技能学习** - 从会话中提取可复用模式
 - **分析与成本追踪** - 了解所有会话的 token 使用情况
+
+### 贡献
+
+想为 OMC 做贡献？请参阅 [CONTRIBUTING.md](./CONTRIBUTING.md) 了解完整的开发者指南，包括如何 fork、设置本地 checkout、将其链接为活跃插件、运行测试和提交 PR。
+
+<!-- TODO(i18n): verify translation -->
 
 ### 自定义技能
 

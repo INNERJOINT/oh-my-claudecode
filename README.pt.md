@@ -32,6 +32,10 @@
 /omc-setup
 ```
 
+Se você executar OMC via `omc --plugin-dir <path>` ou `claude --plugin-dir <path>`, adicione `--plugin-dir-mode` a `omc setup` (ou exporte `OMC_PLUGIN_ROOT` antes) para evitar duplicar habilidades/agentes que o plugin já fornece em tempo de execução. Consulte a [seção Plugin directory flags em REFERENCE.md](./docs/REFERENCE.md#plugin-directory-flags) para uma matriz de decisão completa e todos os sinalizadores disponíveis.
+
+<!-- TODO(i18n): verify translation -->
+
 **Passo 3: Crie algo**
 ```
 autopilot: build a REST API for managing tasks
@@ -165,8 +169,17 @@ Múltiplas estratégias para diferentes casos de uso — da orquestração com T
 
 - **Magic keywords** - `ralph`, `ulw`, `plan` para controle explícito
 - **HUD statusline** - Métricas de orquestração em tempo real na sua barra de status
+  - Se você iniciar Claude Code diretamente com `claude --plugin-dir <path>` (ignorando o shim `omc`), exporte `OMC_PLUGIN_ROOT=<path>` no seu shell para que o bundle HUD se resolva para o mesmo checkout do carregador de plugins. Veja a [seção Plugin directory flags em REFERENCE.md](./docs/REFERENCE.md#plugin-directory-flags) para detalhes.
+
+  <!-- TODO(i18n): verify translation -->
 - **Aprendizado de skills** - Extraia padrões reutilizáveis das suas sessões
 - **Analytics e rastreamento de custos** - Entenda o uso de tokens em todas as sessões
+
+### Contribuindo
+
+Quer contribuir para o OMC? Veja [CONTRIBUTING.md](./CONTRIBUTING.md) para o guia completo do desenvolvedor, incluindo como fazer fork, configurar um checkout local, vinculá-lo como seu plugin ativo, executar testes e enviar PRs.
+
+<!-- TODO(i18n): verify translation -->
 
 ### Skills Personalizadas
 

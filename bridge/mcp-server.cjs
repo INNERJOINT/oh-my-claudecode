@@ -19965,8 +19965,26 @@ function getProjectIdentifier(worktreeRoot) {
   } catch {
     source = root;
   }
+  let primaryRoot = root;
+  try {
+    const commonDir = (0, import_child_process5.execSync)("git rev-parse --path-format=absolute --git-common-dir", {
+      cwd: root,
+      encoding: "utf-8",
+      stdio: ["pipe", "pipe", "pipe"],
+      timeout: 5e3
+    }).trim();
+    const isGitDir = (0, import_path9.basename)(commonDir) === ".git";
+    const isSubmodule = commonDir.includes(`${import_path9.sep}.git${import_path9.sep}modules`);
+    if (isGitDir && !isSubmodule) {
+      const resolved = (0, import_path9.dirname)(commonDir);
+      if (resolved && resolved !== root) {
+        primaryRoot = resolved;
+      }
+    }
+  } catch {
+  }
   const hash = (0, import_crypto.createHash)("sha256").update(source).digest("hex").slice(0, 16);
-  const dirName = (0, import_path9.basename)(root).replace(/[^a-zA-Z0-9_-]/g, "_");
+  const dirName = (0, import_path9.basename)(primaryRoot).replace(/[^a-zA-Z0-9_-]/g, "_");
   return `${dirName}-${hash}`;
 }
 function getOmcRoot(worktreeRoot) {

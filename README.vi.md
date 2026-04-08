@@ -32,6 +32,10 @@
 /omc-setup
 ```
 
+Nếu bạn chạy OMC qua `omc --plugin-dir <path>` hoặc `claude --plugin-dir <path>`, hãy thêm `--plugin-dir-mode` vào `omc setup` (hoặc xuất `OMC_PLUGIN_ROOT` trước) để tránh trùng lặp các kỹ năng/tác nhân mà plugin đã cung cấp trong thời gian chạy. Để xem ma trận quyết định đầy đủ và tất cả các cờ có sẵn, hãy xem [phần Plugin directory flags trong REFERENCE.md](./docs/REFERENCE.md#plugin-directory-flags).
+
+<!-- TODO(i18n): verify translation -->
+
 **Bước 3: Xây một thứ gì đó**
 ```
 autopilot: build a REST API for managing tasks
@@ -165,8 +169,17 @@ Nhiều chiến lược cho nhiều tình huống — từ điều phối dựa 
 
 - **Magic keywords** - `ralph`, `ulw`, `plan` để kiểm soát rõ ràng
 - **HUD statusline** - Chỉ số điều phối theo thời gian thực trong status bar
+  - Nếu bạn khởi chạy Claude Code trực tiếp bằng `claude --plugin-dir <path>` (bỏ qua shim `omc`), hãy xuất `OMC_PLUGIN_ROOT=<path>` trong shell của bạn để gói HUD phân giải thành cùng một checkout như trình tải plugin. Xem [phần Plugin directory flags trong REFERENCE.md](./docs/REFERENCE.md#plugin-directory-flags) để biết chi tiết.
+
+  <!-- TODO(i18n): verify translation -->
 - **Học kỹ năng** - Trích xuất các mẫu tái sử dụng từ các phiên làm việc
 - **Phân tích & theo dõi chi phí** - Hiểu mức sử dụng token trên mọi phiên
+
+### Đóng góp
+
+Bạn muốn đóng góp cho OMC? Xem [CONTRIBUTING.md](./CONTRIBUTING.md) để biết hướng dẫn nhà phát triển đầy đủ, bao gồm cách fork, thiết lập checkout cục bộ, liên kết nó làm plugin hoạt động, chạy các bài kiểm tra và gửi PR.
+
+<!-- TODO(i18n): verify translation -->
 
 ### Kỹ năng Tùy chỉnh
 

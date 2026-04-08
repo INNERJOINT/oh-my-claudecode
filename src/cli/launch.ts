@@ -16,7 +16,8 @@ import {
   writeFileSync,
 } from 'fs';
 import { homedir } from 'os';
-import { basename, join, resolve } from 'path';
+import { basename, join } from 'path';
+import { resolvePluginDirArg } from '../lib/plugin-dir.js';
 import {
   resolveLaunchPolicy,
   buildTmuxSessionName,
@@ -520,12 +521,12 @@ export function parsePluginDirArg(args: string[]): string | null {
     if (a === '--plugin-dir') {
       const next = args[i + 1];
       if (typeof next === 'string' && next.length > 0) {
-        return resolve(next);
+        return resolvePluginDirArg(next);
       }
     } else if (typeof a === 'string' && a.startsWith('--plugin-dir=')) {
       const value = a.slice('--plugin-dir='.length);
       if (value.length > 0) {
-        return resolve(value);
+        return resolvePluginDirArg(value);
       }
     }
   }
