@@ -9160,7 +9160,7 @@ function syncPluginCache(verbose = false) {
     if (!npmRoot) {
       throw new Error("npm root -g returned an empty path");
     }
-    const sourceRoot = (0, import_path45.join)(npmRoot, "oh-my-claude-sisyphus");
+    const sourceRoot = (0, import_path45.join)(npmRoot, "@innerjoint/oh-my-claudecode");
     const packageJsonPath = (0, import_path45.join)(sourceRoot, "package.json");
     const packageJsonRaw = String((0, import_fs34.readFileSync)(packageJsonPath, "utf-8") ?? "");
     const packageMetadata = JSON.parse(packageJsonRaw);
@@ -9240,15 +9240,15 @@ function isTeamEnabled() {
 function getInstalledVersion() {
   if (!(0, import_fs34.existsSync)(VERSION_FILE2)) {
     try {
-      const result = (0, import_child_process14.execSync)("npm list -g oh-my-claude-sisyphus --json", {
+      const result = (0, import_child_process14.execSync)("npm list -g @innerjoint/oh-my-claudecode --json", {
         encoding: "utf-8",
         timeout: 5e3,
         stdio: "pipe"
       });
       const data = JSON.parse(result);
-      if (data.dependencies?.["oh-my-claude-sisyphus"]?.version) {
+      if (data.dependencies?.["@innerjoint/oh-my-claudecode"]?.version) {
         return {
-          version: data.dependencies["oh-my-claude-sisyphus"].version,
+          version: data.dependencies["@innerjoint/oh-my-claudecode"].version,
           installedAt: (/* @__PURE__ */ new Date()).toISOString(),
           installMethod: "npm"
         };
@@ -9442,7 +9442,7 @@ async function performUpdate(options) {
     const release = await fetchLatestRelease();
     const newVersion = release.tag_name.replace(/^v/, "");
     try {
-      (0, import_child_process14.execSync)("npm install -g oh-my-claude-sisyphus@latest", {
+      (0, import_child_process14.execSync)("npm install -g @innerjoint/oh-my-claudecode@latest", {
         encoding: "utf-8",
         stdio: options?.verbose ? "inherit" : "pipe",
         timeout: 12e4,
@@ -9507,7 +9507,7 @@ async function performUpdate(options) {
     } catch (npmError) {
       throw new Error(
         `Auto-update via npm failed. Please run manually:
-  npm install -g oh-my-claude-sisyphus@latest
+  npm install -g @innerjoint/oh-my-claudecode@latest
 Or use: /plugin install oh-my-claudecode
 Error: ${npmError instanceof Error ? npmError.message : npmError}`
       );

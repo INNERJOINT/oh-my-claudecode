@@ -246,7 +246,7 @@ describe('auto-update reconciliation', () => {
 
     mockedReadFileSync.mockImplementation((path: Parameters<typeof readFileSync>[0]) => {
       const normalized = String(path).replace(/\\/g, '/');
-      if (normalized === '/usr/lib/node_modules/oh-my-claude-sisyphus/package.json') {
+      if (normalized === '/usr/lib/node_modules/@innerjoint/oh-my-claudecode/package.json') {
         return JSON.stringify({ version: '4.9.0' });
       }
       if (normalized.includes('.omc-version.json')) {
@@ -264,7 +264,7 @@ describe('auto-update reconciliation', () => {
       if (normalized === cacheRoot) {
         return true;
       }
-      if (normalized.startsWith('/usr/lib/node_modules/oh-my-claude-sisyphus/')) {
+      if (normalized.startsWith('/usr/lib/node_modules/@innerjoint/oh-my-claudecode/')) {
         return normalized.endsWith('/dist') || normalized.endsWith('/package.json');
       }
       return true;
@@ -280,12 +280,12 @@ describe('auto-update reconciliation', () => {
     }));
     expect(mockedMkdirSync).toHaveBeenCalledWith(versionedCacheRoot, { recursive: true });
     expect(mockedCpSync).toHaveBeenCalledWith(
-      '/usr/lib/node_modules/oh-my-claude-sisyphus/dist',
+      '/usr/lib/node_modules/@innerjoint/oh-my-claudecode/dist',
       `${versionedCacheRoot}/dist`,
       expect.objectContaining({ recursive: true, force: true }),
     );
     expect(mockedCpSync).toHaveBeenCalledWith(
-      '/usr/lib/node_modules/oh-my-claude-sisyphus/package.json',
+      '/usr/lib/node_modules/@innerjoint/oh-my-claudecode/package.json',
       `${versionedCacheRoot}/package.json`,
       expect.objectContaining({ recursive: true, force: true }),
     );
@@ -323,7 +323,7 @@ describe('auto-update reconciliation', () => {
 
     mockedReadFileSync.mockImplementation((path: Parameters<typeof readFileSync>[0]) => {
       const normalized = String(path).replace(/\\/g, '/');
-      if (normalized === '/usr/lib/node_modules/oh-my-claude-sisyphus/package.json') {
+      if (normalized === '/usr/lib/node_modules/@innerjoint/oh-my-claudecode/package.json') {
         return JSON.stringify({ version: '4.9.0' });
       }
       if (normalized.includes('.omc-version.json')) {
@@ -341,7 +341,7 @@ describe('auto-update reconciliation', () => {
       if (normalized === cacheRoot) {
         return true;
       }
-      if (normalized.startsWith('/usr/lib/node_modules/oh-my-claude-sisyphus/')) {
+      if (normalized.startsWith('/usr/lib/node_modules/@innerjoint/oh-my-claudecode/')) {
         return normalized.endsWith('/dist');
       }
       return true;
@@ -456,7 +456,7 @@ describe('auto-update reconciliation', () => {
     }));
 
     mockedExecSync.mockImplementation((command: string) => {
-      if (command === 'npm install -g oh-my-claude-sisyphus@latest') {
+      if (command === 'npm install -g @innerjoint/oh-my-claudecode@latest') {
         return '';
       }
       if (command === 'npm root -g') {
@@ -482,7 +482,7 @@ describe('auto-update reconciliation', () => {
     const result = await performUpdate({ verbose: false });
 
     expect(result.success).toBe(true);
-    expect(mockedExecSync).toHaveBeenCalledWith('npm install -g oh-my-claude-sisyphus@latest', expect.any(Object));
+    expect(mockedExecSync).toHaveBeenCalledWith('npm install -g @innerjoint/oh-my-claudecode@latest', expect.any(Object));
   });
 
   it('runs reconciliation as part of performUpdate', async () => {
@@ -508,7 +508,7 @@ describe('auto-update reconciliation', () => {
     const result = await performUpdate({ verbose: false });
 
     expect(result.success).toBe(true);
-    expect(mockedExecSync).toHaveBeenCalledWith('npm install -g oh-my-claude-sisyphus@latest', expect.any(Object));
+    expect(mockedExecSync).toHaveBeenCalledWith('npm install -g @innerjoint/oh-my-claudecode@latest', expect.any(Object));
     expect(mockedInstall).toHaveBeenCalledWith({
       force: true,
       verbose: false,
@@ -756,7 +756,7 @@ describe('auto-update reconciliation', () => {
     }));
 
     mockedExecSync.mockImplementation((command: string) => {
-      if (command === 'npm install -g oh-my-claude-sisyphus@latest') {
+      if (command === 'npm install -g @innerjoint/oh-my-claudecode@latest') {
         return '';
       }
       throw new Error(`Unexpected execSync command: ${command}`);
@@ -775,7 +775,7 @@ describe('auto-update reconciliation', () => {
     const result = await performUpdate({ verbose: false });
 
     expect(result.success).toBe(true);
-    expect(mockedExecSync).toHaveBeenCalledWith('npm install -g oh-my-claude-sisyphus@latest', expect.objectContaining({
+    expect(mockedExecSync).toHaveBeenCalledWith('npm install -g @innerjoint/oh-my-claudecode@latest', expect.objectContaining({
       windowsHide: true,
     }));
     expect(mockedExecFileSync).toHaveBeenNthCalledWith(1, 'where.exe', ['omc.cmd'], expect.objectContaining({
