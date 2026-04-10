@@ -777,13 +777,13 @@ async function processKeywordDetector(input: HookInput): Promise<HookOutput> {
 
   // Record prompt submission time in HUD state
   try {
-    const hudState = readHudState(directory) || {
+    const hudState = readHudState(directory, input.sessionId) || {
       timestamp: new Date().toISOString(),
       backgroundTasks: [],
     };
     hudState.lastPromptTimestamp = new Date().toISOString();
     hudState.timestamp = new Date().toISOString();
-    writeHudState(hudState, directory);
+    writeHudState(hudState, directory, input.sessionId);
   } catch {
     // Silent failure - don't break keyword detection
   }
@@ -1796,7 +1796,7 @@ function processPreToolUse(input: HookInput): HookOutput {
     if (toolInput?.run_in_background) {
       const config = loadConfig();
       const maxBgTasks = config.permissions?.maxBackgroundTasks ?? 5;
-      const runningCount = getRunningTaskCount(directory);
+      const runningCount = getRunningTaskCount(directory, input.sessionId);
 
       if (runningCount >= maxBgTasks) {
         return {
@@ -1829,6 +1829,7 @@ function processPreToolUse(input: HookInput): HookOutput {
         toolInput.description,
         toolInput.subagent_type,
         directory,
+        input.sessionId,
       );
     }
   }
@@ -2031,25 +2032,27 @@ async function processPostToolUse(input: HookInput): Promise<HookOutput> {
 
     if (asyncAgentId) {
       if (toolUseId) {
-        remapBackgroundTaskId(toolUseId, asyncAgentId, directory);
+        remapBackgroundTaskId(toolUseId, asyncAgentId, directory, input.sessionId);
       } else if (description) {
         remapMostRecentMatchingBackgroundTaskId(
           description,
           asyncAgentId,
           directory,
           agentType,
+          input.sessionId,
         );
       }
     } else {
       const failed = taskLaunchDidFail(input.toolOutput);
       if (toolUseId) {
-        completeBackgroundTask(toolUseId, directory, failed);
+        completeBackgroundTask(toolUseId, directory, failed, input.sessionId);
       } else if (description) {
         completeMostRecentMatchingBackgroundTask(
           description,
           directory,
           failed,
           agentType,
+          input.sessionId,
         );
       }
     }
@@ -2066,12 +2069,13 @@ async function processPostToolUse(input: HookInput): Promise<HookOutput> {
   if (input.toolName === "TaskOutput") {
     const taskOutput = parseTaskOutputLifecycle(input.toolOutput);
     if (taskOutput) {
-      completeBackgroundTask(
-        taskOutput.taskId,
-        directory,
-        taskOutputDidFail(taskOutput.status),
-      );
-    }
+    completeBackgroundTask(
+      taskOutput.taskId,
+      directory,
+      taskOutputDidFail(taskOutput.status),
+      input.sessionId,
+    );
+  }
   }
 
   // Wake OpenClaw gateway for post-tool-use (non-blocking, fires for all tools).

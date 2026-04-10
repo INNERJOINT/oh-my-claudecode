@@ -5,10 +5,15 @@
  * Follows patterns from ultrawork-state.
  */
 
-import { existsSync, readFileSync, mkdirSync } from "fs";
+import { existsSync, readFileSync, mkdirSync, unlinkSync } from "fs";
 import { join } from "path";
 import { getClaudeConfigDir } from "../utils/config-dir.js";
-import { validateWorkingDirectory, getOmcRoot } from "../lib/worktree-paths.js";
+import {
+  validateWorkingDirectory,
+  getOmcRoot,
+  ensureSessionStateDir,
+  resolveSessionStatePath,
+} from "../lib/worktree-paths.js";
 import {
   atomicWriteFileSync,
   atomicWriteJsonSync,
@@ -39,6 +44,19 @@ function getLocalStateFilePath(directory?: string): string {
   const baseDir = validateWorkingDirectory(directory);
   const omcStateDir = join(getOmcRoot(baseDir), "state");
   return join(omcStateDir, "hud-state.json");
+}
+
+function getLegacyRootStateFilePath(directory?: string): string {
+  const baseDir = validateWorkingDirectory(directory);
+  return join(getOmcRoot(baseDir), "hud-state.json");
+}
+
+function getStateFilePath(directory?: string, sessionId?: string): string {
+  const baseDir = validateWorkingDirectory(directory);
+  if (sessionId) {
+    return resolveSessionStatePath("hud", sessionId, baseDir);
+  }
+  return getLocalStateFilePath(baseDir);
 }
 
 /**
@@ -145,6 +163,14 @@ function ensureStateDir(directory?: string): void {
   }
 }
 
+function ensureHudStateDir(directory?: string, sessionId?: string): void {
+  if (sessionId) {
+    ensureSessionStateDir(sessionId, validateWorkingDirectory(directory));
+    return;
+  }
+  ensureStateDir(directory);
+}
+
 type HudConfigInput = Omit<
   Partial<HudConfig>,
   "elements" | "thresholds" | "contextLimitWarning" | "missionBoard"
@@ -162,7 +188,31 @@ type HudConfigInput = Omit<
 /**
  * Read HUD state from disk (checks new local and legacy local only)
  */
-export function readHudState(directory?: string): OmcHudState | null {
+export function readHudState(
+  directory?: string,
+  sessionId?: string,
+): OmcHudState | null {
+  // Session-scoped HUD state should never fall back to root/legacy files.
+  // This prevents a stale root state from being revived after a pane/session
+  // recreation when the current session has already been identified.
+  if (sessionId) {
+    const sessionStateFile = getStateFilePath(directory, sessionId);
+    if (!existsSync(sessionStateFile)) {
+      return null;
+    }
+
+    try {
+      const content = readFileSync(sessionStateFile, "utf-8");
+      return JSON.parse(content);
+    } catch (error) {
+      console.error(
+        "[HUD] Failed to read session state:",
+        error instanceof Error ? error.message : error,
+      );
+      return null;
+    }
+  }
+
   // Check new local state first (.omc/state/hud-state.json)
   const localStateFile = getLocalStateFilePath(directory);
   if (existsSync(localStateFile)) {
@@ -179,8 +229,7 @@ export function readHudState(directory?: string): OmcHudState | null {
   }
 
   // Check legacy local state (.omc/hud-state.json)
-  const baseDir = validateWorkingDirectory(directory);
-  const legacyStateFile = join(getOmcRoot(baseDir), "hud-state.json");
+  const legacyStateFile = getLegacyRootStateFilePath(directory);
   if (existsSync(legacyStateFile)) {
     try {
       const content = readFileSync(legacyStateFile, "utf-8");
@@ -200,12 +249,38 @@ export function readHudState(directory?: string): OmcHudState | null {
 /**
  * Write HUD state to disk (local only)
  */
-export function writeHudState(state: OmcHudState, directory?: string): boolean {
+export function writeHudState(
+  state: OmcHudState,
+  directory?: string,
+  sessionId?: string,
+): boolean {
   try {
-    // Write to local .omc/state only
-    ensureStateDir(directory);
-    const localStateFile = getLocalStateFilePath(directory);
-    atomicWriteJsonSync(localStateFile, state);
+    // Write to the session-scoped file when the current session is known,
+    // otherwise keep the legacy local path for backwards compatibility.
+    ensureHudStateDir(directory, sessionId);
+    const stateFile = getStateFilePath(directory, sessionId);
+    const nextState = sessionId ? { ...state, sessionId } : state;
+    atomicWriteJsonSync(stateFile, nextState);
+
+    if (sessionId) {
+      const legacyCandidates = [
+        getLegacyRootStateFilePath(directory),
+      ];
+      for (const legacyFile of legacyCandidates) {
+        if (!existsSync(legacyFile)) {
+          continue;
+        }
+        try {
+          const content = readFileSync(legacyFile, "utf-8");
+          const legacyState = JSON.parse(content) as Partial<OmcHudState>;
+          if (!legacyState.sessionId || legacyState.sessionId === sessionId) {
+            unlinkSync(legacyFile);
+          }
+        } catch {
+          // Best-effort ghost cleanup only.
+        }
+      }
+    }
 
     return true;
   } catch (error) {
@@ -416,10 +491,13 @@ export function applyPreset(preset: HudConfig["preset"]): HudConfig {
  * Initialize HUD state with cleanup of stale/orphaned tasks.
  * Should be called on HUD startup.
  */
-export async function initializeHUDState(directory?: string): Promise<void> {
+export async function initializeHUDState(
+  directory?: string,
+  sessionId?: string,
+): Promise<void> {
   // Clean up stale background tasks from previous sessions
-  const removedStale = await cleanupStaleBackgroundTasks(undefined, directory);
-  const markedOrphaned = await markOrphanedTasksAsStale(directory);
+  const removedStale = await cleanupStaleBackgroundTasks(undefined, directory, sessionId);
+  const markedOrphaned = await markOrphanedTasksAsStale(directory, sessionId);
 
   if (removedStale > 0 || markedOrphaned > 0) {
     console.error(
