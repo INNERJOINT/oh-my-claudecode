@@ -16985,21 +16985,21 @@ var Protocol = class {
    * the error appropriately (e.g., by failing the task, logging, etc.). The Protocol layer
    * simply propagates the error.
    */
-  async _enqueueTaskMessage(taskId, message, sessionId) {
+  async _enqueueTaskMessage(taskId, message, sessionId2) {
     if (!this._taskStore || !this._taskMessageQueue) {
       throw new Error("Cannot enqueue task message: taskStore and taskMessageQueue are not configured");
     }
     const maxQueueSize = this._options?.maxTaskQueueSize;
-    await this._taskMessageQueue.enqueue(taskId, message, sessionId, maxQueueSize);
+    await this._taskMessageQueue.enqueue(taskId, message, sessionId2, maxQueueSize);
   }
   /**
    * Clears the message queue for a task and rejects any pending request resolvers.
    * @param taskId The task ID whose queue should be cleared
    * @param sessionId Optional session ID for binding the operation to a specific session
    */
-  async _clearTaskQueue(taskId, sessionId) {
+  async _clearTaskQueue(taskId, sessionId2) {
     if (this._taskMessageQueue) {
-      const messages = await this._taskMessageQueue.dequeueAll(taskId, sessionId);
+      const messages = await this._taskMessageQueue.dequeueAll(taskId, sessionId2);
       for (const message of messages) {
         if (message.type === "request" && isJSONRPCRequest(message.message)) {
           const requestId = message.message.id;
@@ -17042,7 +17042,7 @@ var Protocol = class {
       }, { once: true });
     });
   }
-  requestTaskStore(request, sessionId) {
+  requestTaskStore(request, sessionId2) {
     const taskStore = this._taskStore;
     if (!taskStore) {
       throw new Error("No task store configured");
@@ -17055,18 +17055,18 @@ var Protocol = class {
         return await taskStore.createTask(taskParams, request.id, {
           method: request.method,
           params: request.params
-        }, sessionId);
+        }, sessionId2);
       },
       getTask: async (taskId) => {
-        const task = await taskStore.getTask(taskId, sessionId);
+        const task = await taskStore.getTask(taskId, sessionId2);
         if (!task) {
           throw new McpError(ErrorCode.InvalidParams, "Failed to retrieve task: Task not found");
         }
         return task;
       },
       storeTaskResult: async (taskId, status, result) => {
-        await taskStore.storeTaskResult(taskId, status, result, sessionId);
-        const task = await taskStore.getTask(taskId, sessionId);
+        await taskStore.storeTaskResult(taskId, status, result, sessionId2);
+        const task = await taskStore.getTask(taskId, sessionId2);
         if (task) {
           const notification = TaskStatusNotificationSchema.parse({
             method: "notifications/tasks/status",
@@ -17079,18 +17079,18 @@ var Protocol = class {
         }
       },
       getTaskResult: (taskId) => {
-        return taskStore.getTaskResult(taskId, sessionId);
+        return taskStore.getTaskResult(taskId, sessionId2);
       },
       updateTaskStatus: async (taskId, status, statusMessage) => {
-        const task = await taskStore.getTask(taskId, sessionId);
+        const task = await taskStore.getTask(taskId, sessionId2);
         if (!task) {
           throw new McpError(ErrorCode.InvalidParams, `Task "${taskId}" not found - it may have been cleaned up`);
         }
         if (isTerminal(task.status)) {
           throw new McpError(ErrorCode.InvalidParams, `Cannot update task "${taskId}" from terminal status "${task.status}" to "${status}". Terminal states (completed, failed, cancelled) cannot transition to other states.`);
         }
-        await taskStore.updateTaskStatus(taskId, status, statusMessage, sessionId);
-        const updatedTask = await taskStore.getTask(taskId, sessionId);
+        await taskStore.updateTaskStatus(taskId, status, statusMessage, sessionId2);
+        const updatedTask = await taskStore.getTask(taskId, sessionId2);
         if (updatedTask) {
           const notification = TaskStatusNotificationSchema.parse({
             method: "notifications/tasks/status",
@@ -17103,7 +17103,7 @@ var Protocol = class {
         }
       },
       listTasks: (cursor) => {
-        return taskStore.listTasks(cursor, sessionId);
+        return taskStore.listTasks(cursor, sessionId2);
       }
     };
   }
@@ -17313,8 +17313,8 @@ var Server = class extends Protocol {
     this._serverInfo = _serverInfo;
     this._loggingLevels = /* @__PURE__ */ new Map();
     this.LOG_LEVEL_SEVERITY = new Map(LoggingLevelSchema.options.map((level, index) => [level, index]));
-    this.isMessageIgnored = (level, sessionId) => {
-      const currentLevel = this._loggingLevels.get(sessionId);
+    this.isMessageIgnored = (level, sessionId2) => {
+      const currentLevel = this._loggingLevels.get(sessionId2);
       return currentLevel ? this.LOG_LEVEL_SEVERITY.get(level) < this.LOG_LEVEL_SEVERITY.get(currentLevel) : false;
     };
     this._capabilities = options?.capabilities ?? {};
@@ -17657,9 +17657,9 @@ var Server = class extends Protocol {
    * @param params
    * @param sessionId optional for stateless and backward compatibility
    */
-  async sendLoggingMessage(params, sessionId) {
+  async sendLoggingMessage(params, sessionId2) {
     if (this._capabilities.logging) {
-      if (!this.isMessageIgnored(params.level, sessionId)) {
+      if (!this.isMessageIgnored(params.level, sessionId2)) {
         return this.notification({ method: "notifications/message", params });
       }
     }
@@ -20313,24 +20313,24 @@ function getRuntimeDir() {
   }
   return path.join(os.tmpdir(), "omc", "runtime");
 }
-function shortenSessionId(sessionId) {
-  return crypto.createHash("sha256").update(sessionId).digest("hex").slice(0, SHORT_SESSION_ID_LENGTH);
+function shortenSessionId(sessionId2) {
+  return crypto.createHash("sha256").update(sessionId2).digest("hex").slice(0, SHORT_SESSION_ID_LENGTH);
 }
-function getSessionDir(sessionId) {
-  const shortId = shortenSessionId(sessionId);
+function getSessionDir(sessionId2) {
+  const shortId = shortenSessionId(sessionId2);
   return path.join(getRuntimeDir(), shortId);
 }
-function getBridgeSocketPath(sessionId) {
-  return path.join(getSessionDir(sessionId), "bridge.sock");
+function getBridgeSocketPath(sessionId2) {
+  return path.join(getSessionDir(sessionId2), "bridge.sock");
 }
-function getBridgeMetaPath(sessionId) {
-  return path.join(getSessionDir(sessionId), "bridge_meta.json");
+function getBridgeMetaPath(sessionId2) {
+  return path.join(getSessionDir(sessionId2), "bridge_meta.json");
 }
-function getBridgePortPath(sessionId) {
-  return path.join(getSessionDir(sessionId), "bridge.port");
+function getBridgePortPath(sessionId2) {
+  return path.join(getSessionDir(sessionId2), "bridge.port");
 }
-function getSessionLockPath(sessionId) {
-  return path.join(getSessionDir(sessionId), "session.lock");
+function getSessionLockPath(sessionId2) {
+  return path.join(getSessionDir(sessionId2), "session.lock");
 }
 function validatePathSegment(segment, name) {
   if (!segment || typeof segment !== "string") {
@@ -20774,8 +20774,8 @@ var SessionLock = class {
   lockId;
   held = false;
   lockInfo = null;
-  constructor(sessionId) {
-    this.lockPath = getSessionLockPath(sessionId);
+  constructor(sessionId2) {
+    this.lockPath = getSessionLockPath(sessionId2);
     this.lockId = crypto3.randomUUID();
   }
   /**
@@ -21108,9 +21108,9 @@ var BRIDGE_SPAWN_TIMEOUT_MS = 3e4;
 var DEFAULT_GRACE_PERIOD_MS = 5e3;
 var SIGTERM_GRACE_MS = 2500;
 var ownedBridgeSessionIds = /* @__PURE__ */ new Set();
-function trackOwnedBridgeSession(sessionId) {
-  if (sessionId) {
-    ownedBridgeSessionIds.add(sessionId);
+function trackOwnedBridgeSession(sessionId2) {
+  if (sessionId2) {
+    ownedBridgeSessionIds.add(sessionId2);
   }
 }
 function getBridgeScriptPath() {
@@ -21194,14 +21194,14 @@ function isSocket(socketPath) {
     return false;
   }
 }
-function isBridgeReady(socketPath, sessionId) {
+function isBridgeReady(socketPath, sessionId2) {
   if (USE_TCP_FALLBACK) {
-    return fs4.existsSync(getBridgePortPath(sessionId));
+    return fs4.existsSync(getBridgePortPath(sessionId2));
   }
   return isSocket(socketPath);
 }
-function readTcpPort(sessionId) {
-  const portPath = getBridgePortPath(sessionId);
+function readTcpPort(sessionId2) {
+  const portPath = getBridgePortPath(sessionId2);
   try {
     const content = fs4.readFileSync(portPath, "utf-8").trim();
     const port = parseInt(content, 10);
@@ -21220,9 +21220,9 @@ function safeUnlinkSocket(socketPath) {
   } catch {
   }
 }
-function safeUnlinkPortFile(sessionId) {
+function safeUnlinkPortFile(sessionId2) {
   try {
-    const portPath = getBridgePortPath(sessionId);
+    const portPath = getBridgePortPath(sessionId2);
     if (fs4.existsSync(portPath)) {
       fs4.unlinkSync(portPath);
     }
@@ -21261,17 +21261,17 @@ function killProcessGroup(pid, signal) {
     }
   }
 }
-async function spawnBridgeServer(sessionId, projectDir) {
-  const sessionDir = getSessionDir(sessionId);
+async function spawnBridgeServer(sessionId2, projectDir) {
+  const sessionDir = getSessionDir(sessionId2);
   ensureDirSync(sessionDir);
-  const socketPath = getBridgeSocketPath(sessionId);
+  const socketPath = getBridgeSocketPath(sessionId2);
   const bridgePath = getBridgeScriptPath();
   if (!fs4.existsSync(bridgePath)) {
     throw new Error(`Bridge script not found: ${bridgePath}`);
   }
   safeUnlinkSocket(socketPath);
   if (USE_TCP_FALLBACK) {
-    safeUnlinkPortFile(sessionId);
+    safeUnlinkPortFile(sessionId2);
   }
   const effectiveProjectDir = projectDir || process.cwd();
   const pythonEnv = await ensurePythonEnvironment(effectiveProjectDir);
@@ -21305,13 +21305,13 @@ async function spawnBridgeServer(sessionId, projectDir) {
     procExitCode = code ?? 1;
   });
   const startTime = Date.now();
-  while (!isBridgeReady(socketPath, sessionId)) {
+  while (!isBridgeReady(socketPath, sessionId2)) {
     if (procExitCode !== null) {
       if (!USE_TCP_FALLBACK && fs4.existsSync(socketPath) && !isSocket(socketPath)) {
         safeUnlinkSocket(socketPath);
       }
       if (USE_TCP_FALLBACK) {
-        safeUnlinkPortFile(sessionId);
+        safeUnlinkPortFile(sessionId2);
       }
       throw new Error(
         `Bridge process exited with code ${procExitCode} before creating socket. Stderr: ${stderrBuffer || "(empty)"}`
@@ -21325,7 +21325,7 @@ async function spawnBridgeServer(sessionId, projectDir) {
         safeUnlinkSocket(socketPath);
       }
       if (USE_TCP_FALLBACK) {
-        safeUnlinkPortFile(sessionId);
+        safeUnlinkPortFile(sessionId2);
       }
       throw new Error(
         `Bridge failed to create socket in ${BRIDGE_SPAWN_TIMEOUT_MS}ms. Stderr: ${stderrBuffer || "(empty)"}`
@@ -21336,7 +21336,7 @@ async function spawnBridgeServer(sessionId, projectDir) {
   const processStartTime = proc.pid ? await getProcessStartTime(proc.pid) : void 0;
   let effectiveSocketPath = socketPath;
   if (USE_TCP_FALLBACK) {
-    const port = readTcpPort(sessionId);
+    const port = readTcpPort(sessionId2);
     if (port === void 0) {
       throw new Error("Bridge created port file but content is invalid");
     }
@@ -21349,33 +21349,33 @@ async function spawnBridgeServer(sessionId, projectDir) {
     pid: proc.pid,
     socketPath: effectiveSocketPath,
     startedAt: (/* @__PURE__ */ new Date()).toISOString(),
-    sessionId,
+    sessionId: sessionId2,
     pythonEnv,
     processStartTime
   };
-  const metaPath = getBridgeMetaPath(sessionId);
+  const metaPath = getBridgeMetaPath(sessionId2);
   await atomicWriteJson(metaPath, meta);
-  trackOwnedBridgeSession(sessionId);
+  trackOwnedBridgeSession(sessionId2);
   return meta;
 }
-async function ensureBridge(sessionId, projectDir) {
-  const metaPath = getBridgeMetaPath(sessionId);
-  const expectedSocketPath = getBridgeSocketPath(sessionId);
+async function ensureBridge(sessionId2, projectDir) {
+  const metaPath = getBridgeMetaPath(sessionId2);
+  const expectedSocketPath = getBridgeSocketPath(sessionId2);
   const meta = await safeReadJson(metaPath);
   if (meta && isValidBridgeMeta(meta)) {
-    if (meta.sessionId !== sessionId) {
-      await deleteBridgeMeta(sessionId);
-      return spawnBridgeServer(sessionId, projectDir);
+    if (meta.sessionId !== sessionId2) {
+      await deleteBridgeMeta(sessionId2);
+      return spawnBridgeServer(sessionId2, projectDir);
     }
     const isTcpMeta = meta.socketPath.startsWith("tcp:");
     if (!isTcpMeta && meta.socketPath !== expectedSocketPath) {
-      await deleteBridgeMeta(sessionId);
-      return spawnBridgeServer(sessionId, projectDir);
+      await deleteBridgeMeta(sessionId2);
+      return spawnBridgeServer(sessionId2, projectDir);
     }
     const stillOurs = await verifyProcessIdentity(meta);
     if (stillOurs) {
       if (meta.socketPath.startsWith("tcp:")) {
-        if (fs4.existsSync(getBridgePortPath(sessionId))) {
+        if (fs4.existsSync(getBridgePortPath(sessionId2))) {
           return meta;
         }
       } else if (isSocket(meta.socketPath)) {
@@ -21386,27 +21386,27 @@ async function ensureBridge(sessionId, projectDir) {
       } catch {
       }
     }
-    await deleteBridgeMeta(sessionId);
+    await deleteBridgeMeta(sessionId2);
   }
-  return spawnBridgeServer(sessionId, projectDir);
+  return spawnBridgeServer(sessionId2, projectDir);
 }
-async function killBridgeWithEscalation(sessionId, options) {
+async function killBridgeWithEscalation(sessionId2, options) {
   const gracePeriod = options?.gracePeriodMs ?? DEFAULT_GRACE_PERIOD_MS;
   const startTime = Date.now();
-  const metaPath = getBridgeMetaPath(sessionId);
+  const metaPath = getBridgeMetaPath(sessionId2);
   const meta = await safeReadJson(metaPath);
   if (!meta || !isValidBridgeMeta(meta)) {
-    ownedBridgeSessionIds.delete(sessionId);
+    ownedBridgeSessionIds.delete(sessionId2);
     return { terminated: true };
   }
-  if (meta.sessionId !== sessionId) {
-    await deleteBridgeMeta(sessionId);
-    ownedBridgeSessionIds.delete(sessionId);
+  if (meta.sessionId !== sessionId2) {
+    await deleteBridgeMeta(sessionId2);
+    ownedBridgeSessionIds.delete(sessionId2);
     return { terminated: true };
   }
   if (!await verifyProcessIdentity(meta)) {
-    await deleteBridgeMeta(sessionId);
-    ownedBridgeSessionIds.delete(sessionId);
+    await deleteBridgeMeta(sessionId2);
+    ownedBridgeSessionIds.delete(sessionId2);
     return { terminated: true };
   }
   const waitForExit = async (timeoutMs) => {
@@ -21431,12 +21431,12 @@ async function killBridgeWithEscalation(sessionId, options) {
       await waitForExit(1e3);
     }
   }
-  await deleteBridgeMeta(sessionId);
-  ownedBridgeSessionIds.delete(sessionId);
-  const sessionDir = getSessionDir(sessionId);
+  await deleteBridgeMeta(sessionId2);
+  ownedBridgeSessionIds.delete(sessionId2);
+  const sessionDir = getSessionDir(sessionId2);
   const socketPath = meta.socketPath;
   if (socketPath.startsWith("tcp:")) {
-    safeUnlinkPortFile(sessionId);
+    safeUnlinkPortFile(sessionId2);
   } else if (socketPath.startsWith(sessionDir)) {
     safeUnlinkSocket(socketPath);
   }
@@ -21454,13 +21454,13 @@ async function cleanupBridgeSessions(sessionIds) {
     terminatedSessions: 0,
     errors: []
   };
-  for (const sessionId of uniqueSessionIds) {
+  for (const sessionId2 of uniqueSessionIds) {
     try {
-      ownedBridgeSessionIds.delete(sessionId);
-      const metaPath = getBridgeMetaPath(sessionId);
-      const socketPath = getBridgeSocketPath(sessionId);
-      const portPath = getBridgePortPath(sessionId);
-      const lockPath = getSessionLockPath(sessionId);
+      ownedBridgeSessionIds.delete(sessionId2);
+      const metaPath = getBridgeMetaPath(sessionId2);
+      const socketPath = getBridgeSocketPath(sessionId2);
+      const portPath = getBridgePortPath(sessionId2);
+      const lockPath = getSessionLockPath(sessionId2);
       const hasArtifacts = fs4.existsSync(metaPath) || fs4.existsSync(socketPath) || fs4.existsSync(portPath) || fs4.existsSync(lockPath);
       if (!hasArtifacts) {
         continue;
@@ -21468,7 +21468,7 @@ async function cleanupBridgeSessions(sessionIds) {
       result.foundSessions++;
       const meta = await safeReadJson(metaPath);
       if (meta && isValidBridgeMeta(meta)) {
-        const escalation = await killBridgeWithEscalation(sessionId);
+        const escalation = await killBridgeWithEscalation(sessionId2);
         if (escalation.terminatedBy) {
           result.terminatedSessions++;
         }
@@ -21479,7 +21479,7 @@ async function cleanupBridgeSessions(sessionIds) {
       }
       await removeFileIfExists(lockPath);
     } catch (error2) {
-      result.errors.push(`session=${sessionId}: ${error2.message}`);
+      result.errors.push(`session=${sessionId2}: ${error2.message}`);
     }
   }
   return result;
@@ -21489,8 +21489,8 @@ async function cleanupOwnedBridgeSessions() {
   ownedBridgeSessionIds.clear();
   return cleanupBridgeSessions(ownedSessions);
 }
-async function deleteBridgeMeta(sessionId) {
-  const metaPath = getBridgeMetaPath(sessionId);
+async function deleteBridgeMeta(sessionId2) {
+  const metaPath = getBridgeMetaPath(sessionId2);
   try {
     await fsPromises2.unlink(metaPath);
   } catch {
@@ -21528,16 +21528,16 @@ var pythonReplSchema = external_exports.object({
   projectDir: external_exports.string().optional().describe("Project directory containing .venv/. Defaults to current working directory.")
 });
 var executionCounters = /* @__PURE__ */ new Map();
-function getNextExecutionCount(sessionId) {
-  const current = executionCounters.get(sessionId) || 0;
+function getNextExecutionCount(sessionId2) {
+  const current = executionCounters.get(sessionId2) || 0;
   const next = current + 1;
-  executionCounters.set(sessionId, next);
+  executionCounters.set(sessionId2, next);
   return next;
 }
-function formatExecuteResult(result, sessionId, executionLabel, executionCount) {
+function formatExecuteResult(result, sessionId2, executionLabel, executionCount) {
   const lines = [];
   lines.push("=== Python REPL Execution ===");
-  lines.push(`Session: ${sessionId}`);
+  lines.push(`Session: ${sessionId2}`);
   if (executionLabel) {
     lines.push(`Label: ${executionLabel}`);
   }
@@ -21590,10 +21590,10 @@ function formatExecuteResult(result, sessionId, executionLabel, executionCount) 
   lines.push(result.success ? "=== Execution Complete ===" : "=== Execution Failed ===");
   return lines.join("\n");
 }
-function formatStateResult(result, sessionId) {
+function formatStateResult(result, sessionId2) {
   const lines = [];
   lines.push("=== Python REPL State ===");
-  lines.push(`Session: ${sessionId}`);
+  lines.push(`Session: ${sessionId2}`);
   lines.push("");
   lines.push("--- Memory ---");
   lines.push(`RSS: ${result.memory.rss_mb.toFixed(1)} MB`);
@@ -21617,10 +21617,10 @@ function formatStateResult(result, sessionId) {
   lines.push("=== State Retrieved ===");
   return lines.join("\n");
 }
-function formatResetResult(result, sessionId) {
+function formatResetResult(result, sessionId2) {
   const lines = [];
   lines.push("=== Python REPL Reset ===");
-  lines.push(`Session: ${sessionId}`);
+  lines.push(`Session: ${sessionId2}`);
   lines.push(`Status: ${result.status}`);
   lines.push("");
   lines.push("--- Memory After Reset ---");
@@ -21630,10 +21630,10 @@ function formatResetResult(result, sessionId) {
   lines.push("=== Namespace Cleared ===");
   return lines.join("\n");
 }
-function formatInterruptResult(result, sessionId) {
+function formatInterruptResult(result, sessionId2) {
   const lines = [];
   lines.push("=== Python REPL Interrupt ===");
-  lines.push(`Session: ${sessionId}`);
+  lines.push(`Session: ${sessionId2}`);
   lines.push(`Status: ${result.status}`);
   if (result.terminatedBy) {
     lines.push(`Terminated By: ${result.terminatedBy}`);
@@ -21645,10 +21645,10 @@ function formatInterruptResult(result, sessionId) {
   lines.push("=== Execution Interrupted ===");
   return lines.join("\n");
 }
-function formatLockTimeoutError(error2, sessionId) {
+function formatLockTimeoutError(error2, sessionId2) {
   const lines = [];
   lines.push("=== Session Busy ===");
-  lines.push(`Session: ${sessionId}`);
+  lines.push(`Session: ${sessionId2}`);
   lines.push("");
   lines.push("The session is currently busy processing another request.");
   lines.push(`Queue timeout: ${error2.timeout}ms`);
@@ -21666,10 +21666,10 @@ function formatLockTimeoutError(error2, sessionId) {
   lines.push('  3. Use the "reset" action to clear the session');
   return lines.join("\n");
 }
-function formatSocketError(error2, sessionId) {
+function formatSocketError(error2, sessionId2) {
   const lines = [];
   lines.push("=== Connection Error ===");
-  lines.push(`Session: ${sessionId}`);
+  lines.push(`Session: ${sessionId2}`);
   lines.push("");
   lines.push(`Error: ${error2.message}`);
   lines.push(`Socket: ${error2.socketPath}`);
@@ -21680,18 +21680,18 @@ function formatSocketError(error2, sessionId) {
   lines.push("  3. Ensure .venv exists with Python installed");
   return lines.join("\n");
 }
-function formatGeneralError(error2, sessionId, action) {
+function formatGeneralError(error2, sessionId2, action) {
   const lines = [];
   lines.push("=== Error ===");
-  lines.push(`Session: ${sessionId}`);
+  lines.push(`Session: ${sessionId2}`);
   lines.push(`Action: ${action}`);
   lines.push("");
   lines.push(`Type: ${error2.name}`);
   lines.push(`Message: ${error2.message}`);
   return lines.join("\n");
 }
-async function handleExecute(sessionId, socketPath, code, executionTimeout, executionLabel) {
-  const executionCount = getNextExecutionCount(sessionId);
+async function handleExecute(sessionId2, socketPath, code, executionTimeout, executionLabel) {
+  const executionCount = getNextExecutionCount(sessionId2);
   try {
     const result = await sendSocketRequest(
       socketPath,
@@ -21700,7 +21700,7 @@ async function handleExecute(sessionId, socketPath, code, executionTimeout, exec
       executionTimeout + 1e4
       // Allow extra time for response
     );
-    return formatExecuteResult(result, sessionId, executionLabel, executionCount);
+    return formatExecuteResult(result, sessionId2, executionLabel, executionCount);
   } catch (error2) {
     if (error2 instanceof SocketConnectionError) {
       throw error2;
@@ -21708,7 +21708,7 @@ async function handleExecute(sessionId, socketPath, code, executionTimeout, exec
     if (error2 instanceof SocketTimeoutError) {
       return [
         "=== Execution Timeout ===",
-        `Session: ${sessionId}`,
+        `Session: ${sessionId2}`,
         `Label: ${executionLabel || "(none)"}`,
         "",
         `The code execution exceeded the timeout of ${executionTimeout / 1e3} seconds.`,
@@ -21720,7 +21720,7 @@ async function handleExecute(sessionId, socketPath, code, executionTimeout, exec
     if (error2 instanceof JsonRpcError) {
       return [
         "=== Execution Failed ===",
-        `Session: ${sessionId}`,
+        `Session: ${sessionId2}`,
         "",
         `Error Code: ${error2.code}`,
         `Message: ${error2.message}`,
@@ -21730,15 +21730,15 @@ async function handleExecute(sessionId, socketPath, code, executionTimeout, exec
     throw error2;
   }
 }
-async function handleReset(sessionId, socketPath) {
+async function handleReset(sessionId2, socketPath) {
   try {
     const result = await sendSocketRequest(socketPath, "reset", {}, 1e4);
-    return formatResetResult(result, sessionId);
+    return formatResetResult(result, sessionId2);
   } catch (_error) {
-    await killBridgeWithEscalation(sessionId);
+    await killBridgeWithEscalation(sessionId2);
     return [
       "=== Bridge Restarted ===",
-      `Session: ${sessionId}`,
+      `Session: ${sessionId2}`,
       "",
       "The bridge was unresponsive and has been terminated.",
       "A new bridge will be spawned on the next request.",
@@ -21747,10 +21747,10 @@ async function handleReset(sessionId, socketPath) {
     ].join("\n");
   }
 }
-async function handleGetState(sessionId, socketPath) {
+async function handleGetState(sessionId2, socketPath) {
   try {
     const result = await sendSocketRequest(socketPath, "get_state", {}, 5e3);
-    return formatStateResult(result, sessionId);
+    return formatStateResult(result, sessionId2);
   } catch (error2) {
     if (error2 instanceof SocketConnectionError) {
       throw error2;
@@ -21758,7 +21758,7 @@ async function handleGetState(sessionId, socketPath) {
     if (error2 instanceof SocketTimeoutError) {
       return [
         "=== State Retrieval Timeout ===",
-        `Session: ${sessionId}`,
+        `Session: ${sessionId2}`,
         "",
         "Could not retrieve state within timeout.",
         "The bridge may be busy with a long-running execution."
@@ -21767,7 +21767,7 @@ async function handleGetState(sessionId, socketPath) {
     throw error2;
   }
 }
-async function handleInterrupt(sessionId, socketPath, gracePeriodMs = 5e3) {
+async function handleInterrupt(sessionId2, socketPath, gracePeriodMs = 5e3) {
   try {
     const result = await sendSocketRequest(
       socketPath,
@@ -21781,17 +21781,17 @@ async function handleInterrupt(sessionId, socketPath, gracePeriodMs = 5e3) {
         status: result.status || "interrupted",
         terminatedBy: "graceful"
       },
-      sessionId
+      sessionId2
     );
   } catch {
-    const escalationResult = await killBridgeWithEscalation(sessionId, { gracePeriodMs });
+    const escalationResult = await killBridgeWithEscalation(sessionId2, { gracePeriodMs });
     return formatInterruptResult(
       {
         status: "force_killed",
         terminatedBy: escalationResult.terminatedBy,
         terminationTimeMs: escalationResult.terminationTimeMs
       },
-      sessionId
+      sessionId2
     );
   }
 }
@@ -21808,7 +21808,7 @@ async function pythonReplHandler(input) {
   }
   const {
     action,
-    researchSessionID: sessionId,
+    researchSessionID: sessionId2,
     code,
     executionLabel,
     executionTimeout,
@@ -21816,7 +21816,7 @@ async function pythonReplHandler(input) {
     projectDir
   } = parseResult.data;
   try {
-    validatePathSegment(sessionId, "researchSessionID");
+    validatePathSegment(sessionId2, "researchSessionID");
   } catch (error2) {
     return [
       "=== Invalid Session ID ===",
@@ -21841,23 +21841,23 @@ async function pythonReplHandler(input) {
       `  code: "print('Hello!')"`
     ].join("\n");
   }
-  const lock = new SessionLock(sessionId);
+  const lock = new SessionLock(sessionId2);
   try {
     await lock.acquire(queueTimeout);
   } catch (error2) {
     if (error2 instanceof LockTimeoutError) {
-      return formatLockTimeoutError(error2, sessionId);
+      return formatLockTimeoutError(error2, sessionId2);
     }
-    return formatGeneralError(error2, sessionId, action);
+    return formatGeneralError(error2, sessionId2, action);
   }
   try {
     let meta;
     try {
-      meta = await ensureBridge(sessionId, projectDir);
+      meta = await ensureBridge(sessionId2, projectDir);
     } catch (error2) {
       return [
         "=== Bridge Startup Failed ===",
-        `Session: ${sessionId}`,
+        `Session: ${sessionId2}`,
         "",
         `Error: ${error2.message}`,
         "",
@@ -21870,7 +21870,7 @@ async function pythonReplHandler(input) {
       case "execute":
         try {
           return await handleExecute(
-            sessionId,
+            sessionId2,
             meta.socketPath,
             code,
             executionTimeout,
@@ -21879,9 +21879,9 @@ async function pythonReplHandler(input) {
         } catch (error2) {
           if (error2 instanceof SocketConnectionError) {
             try {
-              meta = await spawnBridgeServer(sessionId, projectDir);
+              meta = await spawnBridgeServer(sessionId2, projectDir);
               return await handleExecute(
-                sessionId,
+                sessionId2,
                 meta.socketPath,
                 code,
                 executionTimeout,
@@ -21890,25 +21890,25 @@ async function pythonReplHandler(input) {
             } catch (retryError) {
               return formatSocketError(
                 retryError instanceof SocketConnectionError ? retryError : new SocketConnectionError(retryError.message, meta.socketPath),
-                sessionId
+                sessionId2
               );
             }
           }
-          return formatGeneralError(error2, sessionId, action);
+          return formatGeneralError(error2, sessionId2, action);
         }
       case "reset":
-        return await handleReset(sessionId, meta.socketPath);
+        return await handleReset(sessionId2, meta.socketPath);
       case "get_state":
         try {
-          return await handleGetState(sessionId, meta.socketPath);
+          return await handleGetState(sessionId2, meta.socketPath);
         } catch (error2) {
           if (error2 instanceof SocketConnectionError) {
-            return formatSocketError(error2, sessionId);
+            return formatSocketError(error2, sessionId2);
           }
-          return formatGeneralError(error2, sessionId, action);
+          return formatGeneralError(error2, sessionId2, action);
         }
       case "interrupt":
-        return await handleInterrupt(sessionId, meta.socketPath);
+        return await handleInterrupt(sessionId2, meta.socketPath);
       default:
         return [
           "=== Unknown Action ===",
@@ -22067,25 +22067,25 @@ function getWorktreeProjectMemoryPath(worktreeRoot) {
   return (0, import_path9.join)(getOmcRoot(worktreeRoot), "project-memory.json");
 }
 var SESSION_ID_REGEX = /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,255}$/;
-function validateSessionId(sessionId) {
-  if (!sessionId) {
+function validateSessionId(sessionId2) {
+  if (!sessionId2) {
     throw new Error("Session ID cannot be empty");
   }
-  if (sessionId.includes("..") || sessionId.includes("/") || sessionId.includes("\\")) {
-    throw new Error(`Invalid session ID: path traversal not allowed (${sessionId})`);
+  if (sessionId2.includes("..") || sessionId2.includes("/") || sessionId2.includes("\\")) {
+    throw new Error(`Invalid session ID: path traversal not allowed (${sessionId2})`);
   }
-  if (!SESSION_ID_REGEX.test(sessionId)) {
-    throw new Error(`Invalid session ID: must be alphanumeric with hyphens/underscores, max 256 chars (${sessionId})`);
+  if (!SESSION_ID_REGEX.test(sessionId2)) {
+    throw new Error(`Invalid session ID: must be alphanumeric with hyphens/underscores, max 256 chars (${sessionId2})`);
   }
 }
-function resolveSessionStatePath(stateName, sessionId, worktreeRoot) {
-  validateSessionId(sessionId);
+function resolveSessionStatePath(stateName, sessionId2, worktreeRoot) {
+  validateSessionId(sessionId2);
   const normalizedName = stateName.endsWith("-state") ? stateName : `${stateName}-state`;
-  return resolveOmcPath(`state/sessions/${sessionId}/${normalizedName}.json`, worktreeRoot);
+  return resolveOmcPath(`state/sessions/${sessionId2}/${normalizedName}.json`, worktreeRoot);
 }
-function getSessionStateDir(sessionId, worktreeRoot) {
-  validateSessionId(sessionId);
-  return (0, import_path9.join)(getOmcRoot(worktreeRoot), "state", "sessions", sessionId);
+function getSessionStateDir(sessionId2, worktreeRoot) {
+  validateSessionId(sessionId2);
+  return (0, import_path9.join)(getOmcRoot(worktreeRoot), "state", "sessions", sessionId2);
 }
 function listSessionIds(worktreeRoot) {
   const sessionsDir = (0, import_path9.join)(getOmcRoot(worktreeRoot), "state", "sessions");
@@ -22099,8 +22099,8 @@ function listSessionIds(worktreeRoot) {
     return [];
   }
 }
-function ensureSessionStateDir(sessionId, worktreeRoot) {
-  const sessionDir = getSessionStateDir(sessionId, worktreeRoot);
+function ensureSessionStateDir(sessionId2, worktreeRoot) {
+  const sessionDir = getSessionStateDir(sessionId2, worktreeRoot);
   if (!(0, import_fs9.existsSync)(sessionDir)) {
     (0, import_fs9.mkdirSync)(sessionDir, { recursive: true });
   }
@@ -22234,9 +22234,9 @@ function getStateSessionOwner(state) {
   const topLevelSessionId = state.session_id;
   return typeof topLevelSessionId === "string" && topLevelSessionId ? topLevelSessionId : void 0;
 }
-function canClearStateForSession(state, sessionId) {
+function canClearStateForSession(state, sessionId2) {
   const ownerSessionId = getStateSessionOwner(state);
-  return !ownerSessionId || ownerSessionId === sessionId;
+  return !ownerSessionId || ownerSessionId === sessionId2;
 }
 
 // src/hooks/mode-registry/index.ts
@@ -22320,10 +22320,10 @@ var EXCLUSIVE_MODES = [MODE_NAMES.AUTOPILOT];
 function getStateDir(cwd) {
   return (0, import_path11.join)(getOmcRoot(cwd), "state");
 }
-function getStateFilePath(cwd, mode, sessionId) {
+function getStateFilePath(cwd, mode, sessionId2) {
   const config2 = MODE_CONFIGS[mode];
-  if (sessionId) {
-    return resolveSessionStatePath(mode, sessionId, cwd);
+  if (sessionId2) {
+    return resolveSessionStatePath(mode, sessionId2, cwd);
   }
   return (0, import_path11.join)(getStateDir(cwd), config2.stateFile);
 }
@@ -22332,14 +22332,14 @@ function getMarkerFilePath(cwd, mode) {
   if (!config2.markerFile) return null;
   return (0, import_path11.join)(getStateDir(cwd), config2.markerFile);
 }
-function isJsonModeActive(cwd, mode, sessionId) {
+function isJsonModeActive(cwd, mode, sessionId2) {
   const config2 = MODE_CONFIGS[mode];
-  if (sessionId) {
-    const sessionStateFile = resolveSessionStatePath(mode, sessionId, cwd);
+  if (sessionId2) {
+    const sessionStateFile = resolveSessionStatePath(mode, sessionId2, cwd);
     try {
       const content = (0, import_fs11.readFileSync)(sessionStateFile, "utf-8");
       const state = JSON.parse(content);
-      if (state.session_id && state.session_id !== sessionId) {
+      if (state.session_id && state.session_id !== sessionId2) {
         return false;
       }
       if (config2.activeProperty) {
@@ -22368,32 +22368,32 @@ function isJsonModeActive(cwd, mode, sessionId) {
     return false;
   }
 }
-function isModeActive(mode, cwd, sessionId) {
-  return isJsonModeActive(cwd, mode, sessionId);
+function isModeActive(mode, cwd, sessionId2) {
+  return isJsonModeActive(cwd, mode, sessionId2);
 }
-function getActiveModes(cwd, sessionId) {
+function getActiveModes(cwd, sessionId2) {
   const modes = [];
   for (const mode of Object.keys(MODE_CONFIGS)) {
-    if (isModeActive(mode, cwd, sessionId)) {
+    if (isModeActive(mode, cwd, sessionId2)) {
       modes.push(mode);
     }
   }
   return modes;
 }
-function getAllModeStatuses(cwd, sessionId) {
+function getAllModeStatuses(cwd, sessionId2) {
   return Object.keys(MODE_CONFIGS).map((mode) => ({
     mode,
-    active: isModeActive(mode, cwd, sessionId),
-    stateFilePath: getStateFilePath(cwd, mode, sessionId)
+    active: isModeActive(mode, cwd, sessionId2),
+    stateFilePath: getStateFilePath(cwd, mode, sessionId2)
   }));
 }
-function clearModeState(mode, cwd, sessionId) {
+function clearModeState(mode, cwd, sessionId2) {
   const config2 = MODE_CONFIGS[mode];
   let success = true;
   const markerFile = getMarkerFilePath(cwd, mode);
-  const isSessionScopedClear = Boolean(sessionId);
-  if (isSessionScopedClear && sessionId) {
-    const sessionStateFile = resolveSessionStatePath(mode, sessionId, cwd);
+  const isSessionScopedClear = Boolean(sessionId2);
+  if (isSessionScopedClear && sessionId2) {
+    const sessionStateFile = resolveSessionStatePath(mode, sessionId2, cwd);
     try {
       (0, import_fs11.unlinkSync)(sessionStateFile);
     } catch (err) {
@@ -22405,7 +22405,7 @@ function clearModeState(mode, cwd, sessionId) {
       const markerStateName = config2.markerFile.replace(/\.json$/i, "");
       const sessionMarkerFile = resolveSessionStatePath(
         markerStateName,
-        sessionId,
+        sessionId2,
         cwd
       );
       try {
@@ -22420,7 +22420,7 @@ function clearModeState(mode, cwd, sessionId) {
       try {
         const markerRaw = JSON.parse((0, import_fs11.readFileSync)(markerFile, "utf-8"));
         const markerSessionId = markerRaw.session_id ?? markerRaw.sessionId;
-        if (!markerSessionId || markerSessionId === sessionId) {
+        if (!markerSessionId || markerSessionId === sessionId2) {
           try {
             (0, import_fs11.unlinkSync)(markerFile);
           } catch (err) {
@@ -22455,7 +22455,7 @@ function clearModeState(mode, cwd, sessionId) {
       try {
         const markerRaw = JSON.parse((0, import_fs11.readFileSync)(markerFile, "utf-8"));
         const markerSessionId = markerRaw.session_id ?? markerRaw.sessionId;
-        if (!markerSessionId || markerSessionId === sessionId) {
+        if (!markerSessionId || markerSessionId === sessionId2) {
           try {
             (0, import_fs11.unlinkSync)(markerFile);
           } catch (err) {
@@ -22580,7 +22580,7 @@ function getLegacyStateFileCandidates(mode, root) {
   ];
   return [...new Set(candidates)];
 }
-function clearLegacyStateCandidates(mode, root, sessionId) {
+function clearLegacyStateCandidates(mode, root, sessionId2) {
   let cleared = 0;
   let hadFailure = false;
   for (const legacyPath of getLegacyStateFileCandidates(mode, root)) {
@@ -22588,9 +22588,9 @@ function clearLegacyStateCandidates(mode, root, sessionId) {
       continue;
     }
     try {
-      if (sessionId) {
+      if (sessionId2) {
         const raw = JSON.parse((0, import_fs12.readFileSync)(legacyPath, "utf-8"));
-        if (!canClearStateForSession(raw, sessionId)) {
+        if (!canClearStateForSession(raw, sessionId2)) {
           continue;
         }
       }
@@ -22615,15 +22615,15 @@ var stateReadTool = {
     const { mode, workingDirectory, session_id } = args;
     try {
       const root = validateWorkingDirectory(workingDirectory);
-      const sessionId = session_id;
-      if (sessionId) {
-        validateSessionId(sessionId);
-        const statePath2 = MODE_CONFIGS[mode] ? getStateFilePath(root, mode, sessionId) : resolveSessionStatePath(mode, sessionId, root);
+      const sessionId2 = session_id;
+      if (sessionId2) {
+        validateSessionId(sessionId2);
+        const statePath2 = MODE_CONFIGS[mode] ? getStateFilePath(root, mode, sessionId2) : resolveSessionStatePath(mode, sessionId2, root);
         if (!(0, import_fs12.existsSync)(statePath2)) {
           return {
             content: [{
               type: "text",
-              text: `No state found for mode: ${mode} in session: ${sessionId}
+              text: `No state found for mode: ${mode} in session: ${sessionId2}
 Expected path: ${statePath2}`
             }]
           };
@@ -22633,7 +22633,7 @@ Expected path: ${statePath2}`
         return {
           content: [{
             type: "text",
-            text: `## State for ${mode} (session: ${sessionId})
+            text: `## State for ${mode} (session: ${sessionId2})
 
 Path: ${statePath2}
 
@@ -22770,7 +22770,7 @@ var stateWriteTool = {
     } = args;
     try {
       const root = validateWorkingDirectory(workingDirectory);
-      const sessionId = session_id;
+      const sessionId2 = session_id;
       if (state) {
         const validation = validatePayload(state);
         if (!validation.valid) {
@@ -22784,10 +22784,10 @@ var stateWriteTool = {
         }
       }
       let statePath;
-      if (sessionId) {
-        validateSessionId(sessionId);
-        ensureSessionStateDir(sessionId, root);
-        statePath = MODE_CONFIGS[mode] ? getStateFilePath(root, mode, sessionId) : resolveSessionStatePath(mode, sessionId, root);
+      if (sessionId2) {
+        validateSessionId(sessionId2);
+        ensureSessionStateDir(sessionId2, root);
+        statePath = MODE_CONFIGS[mode] ? getStateFilePath(root, mode, sessionId2) : resolveSessionStatePath(mode, sessionId2, root);
       } else {
         ensureOmcDir("state", root);
         statePath = getStatePath(mode, root);
@@ -22813,14 +22813,14 @@ var stateWriteTool = {
         ...builtState,
         _meta: {
           mode,
-          sessionId: sessionId || null,
+          sessionId: sessionId2 || null,
           updatedAt: (/* @__PURE__ */ new Date()).toISOString(),
           updatedBy: "state_write_tool"
         }
       };
       atomicWriteJsonSync(statePath, stateWithMeta);
-      const sessionInfo = sessionId ? ` (session: ${sessionId})` : " (legacy path)";
-      const warningMessage = sessionId ? "" : "\n\nWARNING: No session_id provided. State written to legacy shared path which may leak across parallel sessions. Pass session_id for session-scoped isolation.";
+      const sessionInfo = sessionId2 ? ` (session: ${sessionId2})` : " (legacy path)";
+      const warningMessage = sessionId2 ? "" : "\n\nWARNING: No session_id provided. State written to legacy shared path which may leak across parallel sessions. Pass session_id for session-scoped isolation.";
       return {
         content: [{
           type: "text",
@@ -22856,7 +22856,7 @@ var stateClearTool = {
     const { mode, workingDirectory, session_id } = args;
     try {
       const root = validateWorkingDirectory(workingDirectory);
-      const sessionId = session_id;
+      const sessionId2 = session_id;
       const cleanedTeamNames = /* @__PURE__ */ new Set();
       const collectTeamNamesForCleanup = (statePath) => {
         if (mode !== "team") return;
@@ -22864,12 +22864,12 @@ var stateClearTool = {
           cleanedTeamNames.add(teamName);
         }
       };
-      if (sessionId) {
-        validateSessionId(sessionId);
-        collectTeamNamesForCleanup(resolveSessionStatePath("team", sessionId, root));
-        collectTeamNamesForCleanup(getStateFilePath(root, "team", sessionId));
+      if (sessionId2) {
+        validateSessionId(sessionId2);
+        collectTeamNamesForCleanup(resolveSessionStatePath("team", sessionId2, root));
+        collectTeamNamesForCleanup(getStateFilePath(root, "team", sessionId2));
         const now = Date.now();
-        const cancelSignalPath = resolveSessionStatePath("cancel-signal", sessionId, root);
+        const cancelSignalPath = resolveSessionStatePath("cancel-signal", sessionId2, root);
         atomicWriteJsonSync(cancelSignalPath, {
           active: true,
           requested_at: new Date(now).toISOString(),
@@ -22878,8 +22878,8 @@ var stateClearTool = {
           source: "state_clear"
         });
         if (MODE_CONFIGS[mode]) {
-          const success = clearModeState(mode, root, sessionId);
-          const legacyCleanup2 = clearLegacyStateCandidates(mode, root, sessionId);
+          const success = clearModeState(mode, root, sessionId2);
+          const legacyCleanup2 = clearLegacyStateCandidates(mode, root, sessionId2);
           const ghostNote2 = legacyCleanup2.cleared > 0 ? " (ghost legacy file also removed)" : "";
           const runtimeCleanupNote2 = (() => {
             if (mode !== "team") return "";
@@ -22895,23 +22895,23 @@ var stateClearTool = {
             return {
               content: [{
                 type: "text",
-                text: `Successfully cleared state for mode: ${mode} in session: ${sessionId}${ghostNote2}${runtimeCleanupNote2}`
+                text: `Successfully cleared state for mode: ${mode} in session: ${sessionId2}${ghostNote2}${runtimeCleanupNote2}`
               }]
             };
           } else {
             return {
               content: [{
                 type: "text",
-                text: `Warning: Some files could not be removed for mode: ${mode} in session: ${sessionId}${ghostNote2}${runtimeCleanupNote2}`
+                text: `Warning: Some files could not be removed for mode: ${mode} in session: ${sessionId2}${ghostNote2}${runtimeCleanupNote2}`
               }]
             };
           }
         }
-        const statePath = resolveSessionStatePath(mode, sessionId, root);
+        const statePath = resolveSessionStatePath(mode, sessionId2, root);
         if ((0, import_fs12.existsSync)(statePath)) {
           (0, import_fs12.unlinkSync)(statePath);
         }
-        const legacyCleanup = clearLegacyStateCandidates(mode, root, sessionId);
+        const legacyCleanup = clearLegacyStateCandidates(mode, root, sessionId2);
         const ghostNote = legacyCleanup.cleared > 0 ? " (ghost legacy file also removed)" : "";
         const runtimeCleanupNote = (() => {
           if (mode !== "team") return "";
@@ -22926,7 +22926,7 @@ var stateClearTool = {
         return {
           content: [{
             type: "text",
-            text: `${legacyCleanup.hadFailure ? "Warning: Some files could not be removed" : "Successfully cleared state"} for mode: ${mode} in session: ${sessionId}${ghostNote}${runtimeCleanupNote}`
+            text: `${legacyCleanup.hadFailure ? "Warning: Some files could not be removed" : "Successfully cleared state"} for mode: ${mode} in session: ${sessionId2}${ghostNote}${runtimeCleanupNote}`
           }]
         };
       }
@@ -23038,13 +23038,13 @@ var stateListActiveTool = {
     const { workingDirectory, session_id } = args;
     try {
       const root = validateWorkingDirectory(workingDirectory);
-      const sessionId = session_id;
-      if (sessionId) {
-        validateSessionId(sessionId);
-        const activeModes = [...getActiveModes(root, sessionId)];
+      const sessionId2 = session_id;
+      if (sessionId2) {
+        validateSessionId(sessionId2);
+        const activeModes = [...getActiveModes(root, sessionId2)];
         for (const mode of EXTRA_STATE_ONLY_MODES) {
           try {
-            const statePath = resolveSessionStatePath(mode, sessionId, root);
+            const statePath = resolveSessionStatePath(mode, sessionId2, root);
             if ((0, import_fs12.existsSync)(statePath)) {
               const content = (0, import_fs12.readFileSync)(statePath, "utf-8");
               const state = JSON.parse(content);
@@ -23059,7 +23059,7 @@ var stateListActiveTool = {
           return {
             content: [{
               type: "text",
-              text: `## Active Modes (session: ${sessionId})
+              text: `## Active Modes (session: ${sessionId2})
 
 No modes are currently active in this session.`
             }]
@@ -23069,7 +23069,7 @@ No modes are currently active in this session.`
         return {
           content: [{
             type: "text",
-            text: `## Active Modes (session: ${sessionId}, ${activeModes.length})
+            text: `## Active Modes (session: ${sessionId2}, ${activeModes.length})
 
 ${modeList}`
           }]
@@ -23162,14 +23162,14 @@ var stateGetStatusTool = {
     const { mode, workingDirectory, session_id } = args;
     try {
       const root = validateWorkingDirectory(workingDirectory);
-      const sessionId = session_id;
+      const sessionId2 = session_id;
       if (mode) {
         const lines2 = [`## Status: ${mode}
 `];
-        if (sessionId) {
-          validateSessionId(sessionId);
-          const statePath = MODE_CONFIGS[mode] ? getStateFilePath(root, mode, sessionId) : resolveSessionStatePath(mode, sessionId, root);
-          const active = MODE_CONFIGS[mode] ? isModeActive(mode, root, sessionId) : (0, import_fs12.existsSync)(statePath) && (() => {
+        if (sessionId2) {
+          validateSessionId(sessionId2);
+          const statePath = MODE_CONFIGS[mode] ? getStateFilePath(root, mode, sessionId2) : resolveSessionStatePath(mode, sessionId2, root);
+          const active = MODE_CONFIGS[mode] ? isModeActive(mode, root, sessionId2) : (0, import_fs12.existsSync)(statePath) && (() => {
             try {
               const content = (0, import_fs12.readFileSync)(statePath, "utf-8");
               const state = JSON.parse(content);
@@ -23189,7 +23189,7 @@ var stateGetStatusTool = {
               statePreview = "Error reading state file";
             }
           }
-          lines2.push(`### Session: ${sessionId}`);
+          lines2.push(`### Session: ${sessionId2}`);
           lines2.push(`- **Active:** ${active ? "Yes" : "No"}`);
           lines2.push(`- **State Path:** ${statePath}`);
           lines2.push(`- **Exists:** ${(0, import_fs12.existsSync)(statePath) ? "Yes" : "No"}`);
@@ -23249,14 +23249,14 @@ No active sessions for this mode.`);
           }]
         };
       }
-      const statuses = getAllModeStatuses(root, sessionId);
-      const lines = sessionId ? [`## All Mode Statuses (session: ${sessionId})
+      const statuses = getAllModeStatuses(root, sessionId2);
+      const lines = sessionId2 ? [`## All Mode Statuses (session: ${sessionId2})
 `] : ["## All Mode Statuses\n"];
       for (const status of statuses) {
         const icon = status.active ? "[ACTIVE]" : "[INACTIVE]";
         lines.push(`${icon} **${status.mode}**: ${status.active ? "Active" : "Inactive"}`);
         lines.push(`   Path: \`${status.stateFilePath}\``);
-        if (!sessionId && MODE_CONFIGS[status.mode]) {
+        if (!sessionId2 && MODE_CONFIGS[status.mode]) {
           const activeSessions = getActiveSessionsForMode(status.mode, root);
           if (activeSessions.length > 0) {
             lines.push(`   Active sessions: ${activeSessions.join(", ")}`);
@@ -23264,7 +23264,7 @@ No active sessions for this mode.`);
         }
       }
       for (const mode2 of EXTRA_STATE_ONLY_MODES) {
-        const statePath = sessionId ? resolveSessionStatePath(mode2, sessionId, root) : getStatePath(mode2, root);
+        const statePath = sessionId2 ? resolveSessionStatePath(mode2, sessionId2, root) : getStatePath(mode2, root);
         let active = false;
         if ((0, import_fs12.existsSync)(statePath)) {
           try {
@@ -24016,11 +24016,11 @@ var ContextCollector = class {
    * Register a context entry for a session.
    * If an entry with the same source:id already exists, it will be replaced.
    */
-  register(sessionId, options) {
-    if (!this.sessions.has(sessionId)) {
-      this.sessions.set(sessionId, /* @__PURE__ */ new Map());
+  register(sessionId2, options) {
+    if (!this.sessions.has(sessionId2)) {
+      this.sessions.set(sessionId2, /* @__PURE__ */ new Map());
     }
-    const sessionMap = this.sessions.get(sessionId);
+    const sessionMap = this.sessions.get(sessionId2);
     const key = `${options.source}:${options.id}`;
     const entry = {
       id: options.id,
@@ -24035,8 +24035,8 @@ var ContextCollector = class {
   /**
    * Get pending context for a session without consuming it.
    */
-  getPending(sessionId) {
-    const sessionMap = this.sessions.get(sessionId);
+  getPending(sessionId2) {
+    const sessionMap = this.sessions.get(sessionId2);
     if (!sessionMap || sessionMap.size === 0) {
       return {
         merged: "",
@@ -24056,36 +24056,36 @@ var ContextCollector = class {
    * Get and consume pending context for a session.
    * After consumption, the session's context is cleared.
    */
-  consume(sessionId) {
-    const pending = this.getPending(sessionId);
-    this.clear(sessionId);
+  consume(sessionId2) {
+    const pending = this.getPending(sessionId2);
+    this.clear(sessionId2);
     return pending;
   }
   /**
    * Clear all context for a session.
    */
-  clear(sessionId) {
-    this.sessions.delete(sessionId);
+  clear(sessionId2) {
+    this.sessions.delete(sessionId2);
   }
   /**
    * Check if a session has pending context.
    */
-  hasPending(sessionId) {
-    const sessionMap = this.sessions.get(sessionId);
+  hasPending(sessionId2) {
+    const sessionMap = this.sessions.get(sessionId2);
     return sessionMap !== void 0 && sessionMap.size > 0;
   }
   /**
    * Get count of entries for a session.
    */
-  getEntryCount(sessionId) {
-    const sessionMap = this.sessions.get(sessionId);
+  getEntryCount(sessionId2) {
+    const sessionMap = this.sessions.get(sessionId2);
     return sessionMap?.size ?? 0;
   }
   /**
    * Remove a specific entry from a session.
    */
-  removeEntry(sessionId, source, id) {
-    const sessionMap = this.sessions.get(sessionId);
+  removeEntry(sessionId2, source, id) {
+    const sessionMap = this.sessions.get(sessionId2);
     if (!sessionMap) return false;
     const key = `${source}:${id}`;
     return sessionMap.delete(key);
@@ -24560,16 +24560,16 @@ var import_fs16 = require("fs");
 var import_path22 = require("path");
 var REPLAY_PREFIX = "agent-replay-";
 var MAX_REPLAY_SIZE_BYTES = 5 * 1024 * 1024;
-function getReplayFilePath(directory, sessionId) {
+function getReplayFilePath(directory, sessionId2) {
   const stateDir = (0, import_path22.join)(getOmcRoot(directory), "state");
   if (!(0, import_fs16.existsSync)(stateDir)) {
     (0, import_fs16.mkdirSync)(stateDir, { recursive: true });
   }
-  const safeId = sessionId.replace(/[^a-zA-Z0-9_-]/g, "_");
+  const safeId = sessionId2.replace(/[^a-zA-Z0-9_-]/g, "_");
   return (0, import_path22.join)(stateDir, `${REPLAY_PREFIX}${safeId}.jsonl`);
 }
-function readReplayEvents(directory, sessionId) {
-  const filePath = getReplayFilePath(directory, sessionId);
+function readReplayEvents(directory, sessionId2) {
+  const filePath = getReplayFilePath(directory, sessionId2);
   if (!(0, import_fs16.existsSync)(filePath)) return [];
   try {
     const content = (0, import_fs16.readFileSync)(filePath, "utf-8");
@@ -24606,10 +24606,10 @@ function detectCycles(sequence) {
   }
   return { cycles: 0, pattern: "" };
 }
-function getReplaySummary(directory, sessionId) {
-  const events = readReplayEvents(directory, sessionId);
+function getReplaySummary(directory, sessionId2) {
+  const events = readReplayEvents(directory, sessionId2);
   const summary = {
-    session_id: sessionId,
+    session_id: sessionId2,
     duration_seconds: 0,
     total_events: events.length,
     agents_spawned: 0,
@@ -24965,12 +24965,12 @@ function buildTranscriptEntry(entry) {
     return null;
   }
   const message = entry.message;
-  const sessionId = typeof entry.sessionId === "string" ? entry.sessionId : typeof entry.session_id === "string" ? entry.session_id : typeof message?.sessionId === "string" ? message.sessionId : void 0;
-  if (!sessionId) {
+  const sessionId2 = typeof entry.sessionId === "string" ? entry.sessionId : typeof entry.session_id === "string" ? entry.session_id : typeof message?.sessionId === "string" ? message.sessionId : void 0;
+  if (!sessionId2) {
     return null;
   }
   return {
-    sessionId,
+    sessionId: sessionId2,
     agentId: typeof entry.agentId === "string" ? entry.agentId : void 0,
     timestamp: typeof entry.timestamp === "string" ? entry.timestamp : void 0,
     projectPath: typeof entry.cwd === "string" ? entry.cwd : void 0,
@@ -24980,8 +24980,8 @@ function buildTranscriptEntry(entry) {
   };
 }
 function buildJsonArtifactEntry(entry, sourceType) {
-  const sessionId = typeof entry.session_id === "string" ? entry.session_id : typeof entry.sessionId === "string" ? entry.sessionId : void 0;
-  if (!sessionId) {
+  const sessionId2 = typeof entry.session_id === "string" ? entry.session_id : typeof entry.sessionId === "string" ? entry.sessionId : void 0;
+  if (!sessionId2) {
     return null;
   }
   const texts = stringLeaves(entry);
@@ -24991,7 +24991,7 @@ function buildJsonArtifactEntry(entry, sourceType) {
   const timestamp = typeof entry.ended_at === "string" ? entry.ended_at : typeof entry.started_at === "string" ? entry.started_at : typeof entry.timestamp === "string" ? entry.timestamp : void 0;
   const entryType = sourceType === "omc-session-summary" ? "session-summary" : "session-replay";
   return {
-    sessionId,
+    sessionId: sessionId2,
     timestamp,
     projectPath: typeof entry.cwd === "string" ? entry.cwd : void 0,
     entryType,
@@ -25368,8 +25368,8 @@ var traceTimelineTool = {
     const { sessionId: requestedSessionId, filter = "all", last, workingDirectory } = args;
     try {
       const root = validateWorkingDirectory(workingDirectory);
-      const sessionId = requestedSessionId || findLatestSessionId(root);
-      if (!sessionId) {
+      const sessionId2 = requestedSessionId || findLatestSessionId(root);
+      if (!sessionId2) {
         return {
           content: [{
             type: "text",
@@ -25377,12 +25377,12 @@ var traceTimelineTool = {
           }]
         };
       }
-      let events = readReplayEvents(root, sessionId);
+      let events = readReplayEvents(root, sessionId2);
       if (events.length === 0) {
         return {
           content: [{
             type: "text",
-            text: `## Agent Flow Trace (session: ${sessionId})
+            text: `## Agent Flow Trace (session: ${sessionId2})
 
 No events recorded for this session.`
           }]
@@ -25394,7 +25394,7 @@ No events recorded for this session.`
       }
       const duration3 = events.length > 0 ? (events[events.length - 1].t - events[0].t).toFixed(1) : "0.0";
       const lines = [
-        `## Agent Flow Trace (session: ${sessionId})`,
+        `## Agent Flow Trace (session: ${sessionId2})`,
         `Duration: ${duration3}s | Events: ${events.length}${filter !== "all" ? ` | Filter: ${filter}` : ""}`,
         ""
       ];
@@ -25428,8 +25428,8 @@ var traceSummaryTool = {
     const { sessionId: requestedSessionId, workingDirectory } = args;
     try {
       const root = validateWorkingDirectory(workingDirectory);
-      const sessionId = requestedSessionId || findLatestSessionId(root);
-      if (!sessionId) {
+      const sessionId2 = requestedSessionId || findLatestSessionId(root);
+      if (!sessionId2) {
         return {
           content: [{
             type: "text",
@@ -25437,19 +25437,19 @@ var traceSummaryTool = {
           }]
         };
       }
-      const summary = getReplaySummary(root, sessionId);
+      const summary = getReplaySummary(root, sessionId2);
       if (summary.total_events === 0) {
         return {
           content: [{
             type: "text",
-            text: `## Trace Summary (session: ${sessionId})
+            text: `## Trace Summary (session: ${sessionId2})
 
 No events recorded.`
           }]
         };
       }
       const lines = [
-        `## Trace Summary (session: ${sessionId})`,
+        `## Trace Summary (session: ${sessionId2})`,
         "",
         `### Overview`,
         `- **Duration:** ${summary.duration_seconds.toFixed(1)}s`,
@@ -25505,7 +25505,7 @@ No events recorded.`
         }
         lines.push("");
       }
-      const flowEvents = buildExecutionFlow(readReplayEvents(root, sessionId));
+      const flowEvents = buildExecutionFlow(readReplayEvents(root, sessionId2));
       if (flowEvents.length > 0) {
         lines.push(`### Execution Flow`);
         for (let i = 0; i < flowEvents.length; i++) {
@@ -25558,27 +25558,108 @@ No events recorded.`
 var traceTools = [traceTimelineTool, traceSummaryTool, sessionSearchTool];
 
 // src/tools/aosp-tools.ts
-var AOSP_MCP_URL = process.env.AOSP_MCP_URL || "http://10.23.12.96:8888/mcp";
+var AOSP_MCP_URL = process.env.AOSP_MCP_URL || "http://10.23.12.96:8888/mcp/";
 var AOSP_MCP_KEY = process.env.AOSP_MCP_KEY || "sk-abc123";
-async function callAospMcp(method, params) {
-  const body = JSON.stringify({
-    jsonrpc: "2.0",
-    id: 1,
-    method,
-    params
-  });
+var sessionId = null;
+var sessionInitPromise = null;
+var requestCounter = 0;
+function nextId() {
+  return ++requestCounter;
+}
+function parseSseResponse(body) {
+  const lines = body.split("\n");
+  for (const line of lines) {
+    if (line.startsWith("data: ")) {
+      const data = line.slice(6).trim();
+      if (data) {
+        return JSON.parse(data);
+      }
+    }
+  }
+  return JSON.parse(body);
+}
+async function mcpPost(payload, sid) {
+  const headers = {
+    "Content-Type": "application/json",
+    "Accept": "application/json, text/event-stream",
+    "Authorization": `Bearer ${AOSP_MCP_KEY}`
+  };
+  if (sid) {
+    headers["Mcp-Session-Id"] = sid;
+  }
   const res = await fetch(AOSP_MCP_URL, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "Authorization": `Bearer ${AOSP_MCP_KEY}`
-    },
-    body
+    headers,
+    body: JSON.stringify(payload)
   });
-  if (!res.ok) {
-    throw new Error(`AOSP MCP request failed: ${res.status} ${res.statusText}`);
+  const body = await res.text();
+  return { body, headers: res.headers, status: res.status };
+}
+async function initSession() {
+  const initRes = await mcpPost({
+    jsonrpc: "2.0",
+    id: nextId(),
+    method: "initialize",
+    params: {
+      protocolVersion: "2025-03-26",
+      capabilities: {},
+      clientInfo: { name: "omc-aosp", version: "1.0" }
+    }
+  });
+  if (initRes.status !== 200) {
+    throw new Error(`AOSP MCP initialize failed: ${initRes.status} \u2014 ${initRes.body}`);
   }
-  const json = await res.json();
+  const sid = initRes.headers.get("mcp-session-id");
+  if (!sid) {
+    throw new Error("AOSP MCP server did not return a session ID");
+  }
+  await mcpPost(
+    { jsonrpc: "2.0", method: "notifications/initialized" },
+    sid
+  ).catch(() => {
+  });
+  return sid;
+}
+async function getSession() {
+  if (sessionId) return sessionId;
+  if (!sessionInitPromise) {
+    sessionInitPromise = initSession().then((sid) => {
+      sessionId = sid;
+      sessionInitPromise = null;
+      return sid;
+    }).catch((err) => {
+      sessionInitPromise = null;
+      throw err;
+    });
+  }
+  return sessionInitPromise;
+}
+async function callAospMcp(method, params) {
+  let sid = await getSession();
+  const doCall = async (currentSid) => {
+    const res2 = await mcpPost(
+      { jsonrpc: "2.0", id: nextId(), method, params },
+      currentSid
+    );
+    if (res2.status === 400 || res2.status === 404) {
+      sessionId = null;
+      const newSid = await getSession();
+      const retry = await mcpPost(
+        { jsonrpc: "2.0", id: nextId(), method, params },
+        newSid
+      );
+      if (retry.status !== 200) {
+        throw new Error(`AOSP MCP request failed after session refresh: ${retry.status} \u2014 ${retry.body}`);
+      }
+      return retry;
+    }
+    if (res2.status !== 200) {
+      throw new Error(`AOSP MCP request failed: ${res2.status} \u2014 ${res2.body}`);
+    }
+    return res2;
+  };
+  const res = await doCall(sid);
+  const json = parseSseResponse(res.body);
   if (json.error) {
     throw new Error(`AOSP MCP error: ${json.error.message}`);
   }
@@ -25586,11 +25667,11 @@ async function callAospMcp(method, params) {
 }
 var aospCodeSearchTool = {
   name: "aosp_code_search",
-  description: 'Search AOSP (Android Open Source Project) codebase via remote MCP server. Use the "tool" param to specify which remote tool to call (e.g. "search", "lookup"), and "arguments" for tool-specific parameters.',
+  description: 'Search AOSP (Android Open Source Project) codebase via remote MCP server. Use the "tool" param to specify which remote tool to call (e.g. "search_code", "search_symbol", "search_file"), and "arguments" for tool-specific parameters.',
   annotations: { readOnlyHint: true, openWorldHint: true },
   schema: {
-    tool: external_exports.string().describe('Remote AOSP MCP tool name to invoke (e.g. "search", "lookup", "list_tools")'),
-    arguments: external_exports.record(external_exports.string(), external_exports.string()).optional().describe("Arguments to pass to the remote tool as key-value pairs")
+    tool: external_exports.string().describe('Remote AOSP MCP tool name to invoke (e.g. "search_code", "search_symbol", "search_file", "search_regex", "list_repos", "get_file_content", "list_tools")'),
+    arguments: external_exports.record(external_exports.string(), external_exports.union([external_exports.string(), external_exports.number(), external_exports.boolean()])).optional().describe("Arguments to pass to the remote tool as key-value pairs")
   },
   handler: async (args) => {
     try {
