@@ -1,5 +1,9 @@
 node_modules/
-dist/
+# dist/ — 只追踪运行时 JS，排除其他编译产物
+dist/**/*.js.map
+dist/**/*.d.ts
+dist/**/*.d.ts.map
+dist/**/__tests__/
 *.log
 .DS_Store
 .omc/
