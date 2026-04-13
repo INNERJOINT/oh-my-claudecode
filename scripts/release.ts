@@ -313,7 +313,7 @@ function generateReleaseBody(
   body += 'Or reinstall the plugin:\n```bash\nclaude /install-plugin oh-my-claudecode\n```\n';
 
   if (prevTag) {
-    body += `\n**Full Changelog**: https://github.com/Yeachan-Heo/oh-my-claudecode/compare/${prevTag}...v${version}\n`;
+    body += `\n**Full Changelog**: https://github.com/INNERJOINT/oh-my-claudecode/compare/${prevTag}...v${version}\n`;
   }
 
   if (contributors.length > 0) {

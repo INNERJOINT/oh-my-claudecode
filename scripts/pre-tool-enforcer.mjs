@@ -378,7 +378,7 @@ const SKILL_PROTECTION_MAP = {
 function getSkillProtectionLevel(skillName, rawSkillName) {
   // When rawSkillName is provided, only apply protection to OMC-prefixed skills.
   // Non-prefixed skills are project custom skills or other plugins — no protection.
-  // See: https://github.com/Yeachan-Heo/oh-my-claudecode/issues/1581
+  // See: https://github.com/INNERJOINT/oh-my-claudecode/issues/1581
   if (rawSkillName != null && typeof rawSkillName === 'string' &&
       !rawSkillName.toLowerCase().startsWith('oh-my-claudecode:')) {
     return 'none';

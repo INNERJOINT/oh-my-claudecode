@@ -1279,7 +1279,7 @@ function getInvokedSkillName(toolInput) {
  * Extract the raw (un-normalized) skill name from Skill tool input.
  * Used to distinguish OMC built-in skills (prefixed with 'oh-my-claudecode:')
  * from project custom skills or other plugin skills with the same bare name.
- * See: https://github.com/Yeachan-Heo/oh-my-claudecode/issues/1581
+ * See: https://github.com/INNERJOINT/oh-my-claudecode/issues/1581
  */
 function getRawSkillName(toolInput) {
     if (!toolInput || typeof toolInput !== "object")

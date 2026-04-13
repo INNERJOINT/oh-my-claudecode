@@ -1074,7 +1074,7 @@ Note: Analytics help you understand where tokens are going and optimize your usa
 
 **Method 1: Plugin Marketplace (Recommended)**
 ```bash
-/plugin marketplace add https://github.com/Yeachan-Heo/oh-my-claudecode
+/plugin marketplace add https://github.com/INNERJOINT/oh-my-claudecode
 /plugin install oh-my-claudecode
 ```
 
@@ -1085,7 +1085,7 @@ npm install -g oh-my-claudecode
 
 **Method 3: Manual Git Clone**
 ```bash
-git clone https://github.com/Yeachan-Heo/oh-my-claudecode.git
+git clone https://github.com/INNERJOINT/oh-my-claudecode.git
 cd oh-my-claudecode
 npm install && npm run build
 ```
@@ -1103,7 +1103,7 @@ Note: Plugin marketplace is the easiest - one command and you're done.
 
 **Step 1: Install**
 ```bash
-/plugin marketplace add https://github.com/Yeachan-Heo/oh-my-claudecode
+/plugin marketplace add https://github.com/INNERJOINT/oh-my-claudecode
 /plugin install oh-my-claudecode
 ```
 
@@ -1184,7 +1184,7 @@ Note: Matching the right mode to the task type is key to getting the most out of
 
 **GitHub Repository**
 ```
-github.com/Yeachan-Heo/oh-my-claudecode
+github.com/INNERJOINT/oh-my-claudecode
 ```
 
 **Website & Documentation**
@@ -1240,12 +1240,12 @@ Note: Thank you for attending! Feel free to reach out via GitHub issues for any 
 Zero learning curve. Maximum power.
 
 ```
-github.com/Yeachan-Heo/oh-my-claudecode
+github.com/INNERJOINT/oh-my-claudecode
 ```
 
 **Get Started Now:**
 ```
-/plugin marketplace add https://github.com/Yeachan-Heo/oh-my-claudecode
+/plugin marketplace add https://github.com/INNERJOINT/oh-my-claudecode
 /plugin install oh-my-claudecode
 autopilot: build something amazing
 ```

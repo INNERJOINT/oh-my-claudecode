@@ -77,7 +77,7 @@ EXAMPLES:
   /oh-my-claudecode:omc-setup --global  # Update all projects
   /oh-my-claudecode:omc-setup --force   # Re-run full setup wizard
 
-For more info: https://github.com/Yeachan-Heo/oh-my-claudecode
+For more info: https://github.com/INNERJOINT/oh-my-claudecode
 ```
 
 ## Pre-Setup Check: Already Configured?

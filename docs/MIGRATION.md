@@ -348,7 +348,7 @@ npm uninstall -g oh-my-claudecode
 
 ```bash
 # In Claude Code:
-/plugin marketplace add https://github.com/Yeachan-Heo/oh-my-claudecode
+/plugin marketplace add https://github.com/INNERJOINT/oh-my-claudecode
 /plugin install oh-my-claudecode
 ```
 
@@ -835,7 +835,7 @@ Expected timeline: Q1 2026
 
 ### Stay Updated
 
-- Watch the [GitHub repository](https://github.com/Yeachan-Heo/oh-my-claudecode) for announcements
+- Watch the [GitHub repository](https://github.com/INNERJOINT/oh-my-claudecode) for announcements
 - Check [CHANGELOG.md](../CHANGELOG.md) for detailed release notes
 - Join discussions in GitHub Issues
 
@@ -971,7 +971,7 @@ A: Keywords are explicit shortcuts. Natural language triggers auto-detection. Bo
 - **See all commands**: Run `/oh-my-claudecode:omc-help`
 - **View real-time status**: Run `/oh-my-claudecode:hud setup`
 - **Review detailed changelog**: See [CHANGELOG.md](../CHANGELOG.md)
-- **Report bugs**: [GitHub Issues](https://github.com/Yeachan-Heo/oh-my-claudecode/issues)
+- **Report bugs**: [GitHub Issues](https://github.com/INNERJOINT/oh-my-claudecode/issues)
 
 ---
 

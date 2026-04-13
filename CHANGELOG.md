@@ -51,4 +51,4 @@ Or reinstall the plugin:
 claude /install-plugin oh-my-claudecode
 ```
 
-**Full Changelog**: https://github.com/Yeachan-Heo/oh-my-claudecode/compare/v4.8.2...v4.9.0
+**Full Changelog**: https://github.com/INNERJOINT/oh-my-claudecode/compare/v4.8.2...v4.9.0

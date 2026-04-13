@@ -314,7 +314,7 @@ npm uninstall -g oh-my-claude-sisyphus
 
 ```bash
 # Claude Code에서:
-/plugin marketplace add https://github.com/Yeachan-Heo/oh-my-claudecode
+/plugin marketplace add https://github.com/INNERJOINT/oh-my-claudecode
 /plugin install oh-my-claudecode
 ```
 

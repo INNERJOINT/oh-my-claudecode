@@ -14,6 +14,7 @@ Complete reference for oh-my-claudecode. For quick start, see the main [README.m
 - [Skills (32 Total)](#skills-32-total)
 - [Slash Commands](#slash-commands)
 - [Hooks System](#hooks-system)
+- [Scripts Inventory](#scripts-inventory)
 - [Magic Keywords](#magic-keywords)
 - [Platform Support](#platform-support)
 - [Performance Monitoring](#performance-monitoring)
@@ -30,7 +31,7 @@ Complete reference for oh-my-claudecode. For quick start, see the main [README.m
 
 ```bash
 # Step 1: Add the marketplace
-/plugin marketplace add https://github.com/Yeachan-Heo/oh-my-claudecode
+/plugin marketplace add https://github.com/INNERJOINT/oh-my-claudecode
 
 # Step 2: Install the plugin
 /plugin install oh-my-claudecode
@@ -564,6 +565,18 @@ explicitly enabled via the global OMC config file:
 | `background-notification` | Background task completion notifications |
 | `plugin-patterns`         | Plugin pattern detection                 |
 | `setup`                   | Initial setup and configuration          |
+
+---
+
+## Scripts Inventory
+
+For a file-by-file summary of the scripts under `scripts/`, see [SCRIPTS.md](./SCRIPTS.md).
+
+That inventory covers:
+
+- `package.json` entrypoints such as build, docs, metadata, and release scripts
+- lifecycle hook entrypoints wired through `hooks/hooks.json`
+- manual QA, demo, cleanup, and helper scripts under `scripts/`
 
 ---
 

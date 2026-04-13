@@ -4994,24 +4994,24 @@ function getRuntimeDir() {
   }
   return path.join(os2.tmpdir(), "omc", "runtime");
 }
-function shortenSessionId(sessionId) {
-  return crypto2.createHash("sha256").update(sessionId).digest("hex").slice(0, SHORT_SESSION_ID_LENGTH);
+function shortenSessionId(sessionId2) {
+  return crypto2.createHash("sha256").update(sessionId2).digest("hex").slice(0, SHORT_SESSION_ID_LENGTH);
 }
-function getSessionDir(sessionId) {
-  const shortId = shortenSessionId(sessionId);
+function getSessionDir(sessionId2) {
+  const shortId = shortenSessionId(sessionId2);
   return path.join(getRuntimeDir(), shortId);
 }
-function getBridgeSocketPath(sessionId) {
-  return path.join(getSessionDir(sessionId), "bridge.sock");
+function getBridgeSocketPath(sessionId2) {
+  return path.join(getSessionDir(sessionId2), "bridge.sock");
 }
-function getBridgeMetaPath(sessionId) {
-  return path.join(getSessionDir(sessionId), "bridge_meta.json");
+function getBridgeMetaPath(sessionId2) {
+  return path.join(getSessionDir(sessionId2), "bridge_meta.json");
 }
-function getBridgePortPath(sessionId) {
-  return path.join(getSessionDir(sessionId), "bridge.port");
+function getBridgePortPath(sessionId2) {
+  return path.join(getSessionDir(sessionId2), "bridge.port");
 }
-function getSessionLockPath(sessionId) {
-  return path.join(getSessionDir(sessionId), "session.lock");
+function getSessionLockPath(sessionId2) {
+  return path.join(getSessionDir(sessionId2), "session.lock");
 }
 function validatePathSegment(segment, name) {
   if (!segment || typeof segment !== "string") {
@@ -5349,9 +5349,9 @@ var init_platform = __esm({
 });
 
 // src/tools/python-repl/bridge-manager.ts
-function trackOwnedBridgeSession(sessionId) {
-  if (sessionId) {
-    ownedBridgeSessionIds.add(sessionId);
+function trackOwnedBridgeSession(sessionId2) {
+  if (sessionId2) {
+    ownedBridgeSessionIds.add(sessionId2);
   }
 }
 function getBridgeScriptPath() {
@@ -5434,14 +5434,14 @@ function isSocket(socketPath) {
     return false;
   }
 }
-function isBridgeReady(socketPath, sessionId) {
+function isBridgeReady(socketPath, sessionId2) {
   if (USE_TCP_FALLBACK) {
-    return fs5.existsSync(getBridgePortPath(sessionId));
+    return fs5.existsSync(getBridgePortPath(sessionId2));
   }
   return isSocket(socketPath);
 }
-function readTcpPort(sessionId) {
-  const portPath = getBridgePortPath(sessionId);
+function readTcpPort(sessionId2) {
+  const portPath = getBridgePortPath(sessionId2);
   try {
     const content = fs5.readFileSync(portPath, "utf-8").trim();
     const port = parseInt(content, 10);
@@ -5460,9 +5460,9 @@ function safeUnlinkSocket(socketPath) {
   } catch {
   }
 }
-function safeUnlinkPortFile(sessionId) {
+function safeUnlinkPortFile(sessionId2) {
   try {
-    const portPath = getBridgePortPath(sessionId);
+    const portPath = getBridgePortPath(sessionId2);
     if (fs5.existsSync(portPath)) {
       fs5.unlinkSync(portPath);
     }
@@ -5501,17 +5501,17 @@ function killProcessGroup(pid, signal) {
     }
   }
 }
-async function spawnBridgeServer(sessionId, projectDir) {
-  const sessionDir = getSessionDir(sessionId);
+async function spawnBridgeServer(sessionId2, projectDir) {
+  const sessionDir = getSessionDir(sessionId2);
   ensureDirSync(sessionDir);
-  const socketPath = getBridgeSocketPath(sessionId);
+  const socketPath = getBridgeSocketPath(sessionId2);
   const bridgePath = getBridgeScriptPath();
   if (!fs5.existsSync(bridgePath)) {
     throw new Error(`Bridge script not found: ${bridgePath}`);
   }
   safeUnlinkSocket(socketPath);
   if (USE_TCP_FALLBACK) {
-    safeUnlinkPortFile(sessionId);
+    safeUnlinkPortFile(sessionId2);
   }
   const effectiveProjectDir = projectDir || process.cwd();
   const pythonEnv = await ensurePythonEnvironment(effectiveProjectDir);
@@ -5545,13 +5545,13 @@ async function spawnBridgeServer(sessionId, projectDir) {
     procExitCode = code ?? 1;
   });
   const startTime = Date.now();
-  while (!isBridgeReady(socketPath, sessionId)) {
+  while (!isBridgeReady(socketPath, sessionId2)) {
     if (procExitCode !== null) {
       if (!USE_TCP_FALLBACK && fs5.existsSync(socketPath) && !isSocket(socketPath)) {
         safeUnlinkSocket(socketPath);
       }
       if (USE_TCP_FALLBACK) {
-        safeUnlinkPortFile(sessionId);
+        safeUnlinkPortFile(sessionId2);
       }
       throw new Error(
         `Bridge process exited with code ${procExitCode} before creating socket. Stderr: ${stderrBuffer || "(empty)"}`
@@ -5565,7 +5565,7 @@ async function spawnBridgeServer(sessionId, projectDir) {
         safeUnlinkSocket(socketPath);
       }
       if (USE_TCP_FALLBACK) {
-        safeUnlinkPortFile(sessionId);
+        safeUnlinkPortFile(sessionId2);
       }
       throw new Error(
         `Bridge failed to create socket in ${BRIDGE_SPAWN_TIMEOUT_MS}ms. Stderr: ${stderrBuffer || "(empty)"}`
@@ -5576,7 +5576,7 @@ async function spawnBridgeServer(sessionId, projectDir) {
   const processStartTime = proc.pid ? await getProcessStartTime(proc.pid) : void 0;
   let effectiveSocketPath = socketPath;
   if (USE_TCP_FALLBACK) {
-    const port = readTcpPort(sessionId);
+    const port = readTcpPort(sessionId2);
     if (port === void 0) {
       throw new Error("Bridge created port file but content is invalid");
     }
@@ -5589,33 +5589,33 @@ async function spawnBridgeServer(sessionId, projectDir) {
     pid: proc.pid,
     socketPath: effectiveSocketPath,
     startedAt: (/* @__PURE__ */ new Date()).toISOString(),
-    sessionId,
+    sessionId: sessionId2,
     pythonEnv,
     processStartTime
   };
-  const metaPath = getBridgeMetaPath(sessionId);
+  const metaPath = getBridgeMetaPath(sessionId2);
   await atomicWriteJson(metaPath, meta);
-  trackOwnedBridgeSession(sessionId);
+  trackOwnedBridgeSession(sessionId2);
   return meta;
 }
-async function ensureBridge(sessionId, projectDir) {
-  const metaPath = getBridgeMetaPath(sessionId);
-  const expectedSocketPath = getBridgeSocketPath(sessionId);
+async function ensureBridge(sessionId2, projectDir) {
+  const metaPath = getBridgeMetaPath(sessionId2);
+  const expectedSocketPath = getBridgeSocketPath(sessionId2);
   const meta = await safeReadJson(metaPath);
   if (meta && isValidBridgeMeta(meta)) {
-    if (meta.sessionId !== sessionId) {
-      await deleteBridgeMeta(sessionId);
-      return spawnBridgeServer(sessionId, projectDir);
+    if (meta.sessionId !== sessionId2) {
+      await deleteBridgeMeta(sessionId2);
+      return spawnBridgeServer(sessionId2, projectDir);
     }
     const isTcpMeta = meta.socketPath.startsWith("tcp:");
     if (!isTcpMeta && meta.socketPath !== expectedSocketPath) {
-      await deleteBridgeMeta(sessionId);
-      return spawnBridgeServer(sessionId, projectDir);
+      await deleteBridgeMeta(sessionId2);
+      return spawnBridgeServer(sessionId2, projectDir);
     }
     const stillOurs = await verifyProcessIdentity(meta);
     if (stillOurs) {
       if (meta.socketPath.startsWith("tcp:")) {
-        if (fs5.existsSync(getBridgePortPath(sessionId))) {
+        if (fs5.existsSync(getBridgePortPath(sessionId2))) {
           return meta;
         }
       } else if (isSocket(meta.socketPath)) {
@@ -5626,27 +5626,27 @@ async function ensureBridge(sessionId, projectDir) {
       } catch {
       }
     }
-    await deleteBridgeMeta(sessionId);
+    await deleteBridgeMeta(sessionId2);
   }
-  return spawnBridgeServer(sessionId, projectDir);
+  return spawnBridgeServer(sessionId2, projectDir);
 }
-async function killBridgeWithEscalation(sessionId, options) {
+async function killBridgeWithEscalation(sessionId2, options) {
   const gracePeriod = options?.gracePeriodMs ?? DEFAULT_GRACE_PERIOD_MS;
   const startTime = Date.now();
-  const metaPath = getBridgeMetaPath(sessionId);
+  const metaPath = getBridgeMetaPath(sessionId2);
   const meta = await safeReadJson(metaPath);
   if (!meta || !isValidBridgeMeta(meta)) {
-    ownedBridgeSessionIds.delete(sessionId);
+    ownedBridgeSessionIds.delete(sessionId2);
     return { terminated: true };
   }
-  if (meta.sessionId !== sessionId) {
-    await deleteBridgeMeta(sessionId);
-    ownedBridgeSessionIds.delete(sessionId);
+  if (meta.sessionId !== sessionId2) {
+    await deleteBridgeMeta(sessionId2);
+    ownedBridgeSessionIds.delete(sessionId2);
     return { terminated: true };
   }
   if (!await verifyProcessIdentity(meta)) {
-    await deleteBridgeMeta(sessionId);
-    ownedBridgeSessionIds.delete(sessionId);
+    await deleteBridgeMeta(sessionId2);
+    ownedBridgeSessionIds.delete(sessionId2);
     return { terminated: true };
   }
   const waitForExit = async (timeoutMs) => {
@@ -5671,12 +5671,12 @@ async function killBridgeWithEscalation(sessionId, options) {
       await waitForExit(1e3);
     }
   }
-  await deleteBridgeMeta(sessionId);
-  ownedBridgeSessionIds.delete(sessionId);
-  const sessionDir = getSessionDir(sessionId);
+  await deleteBridgeMeta(sessionId2);
+  ownedBridgeSessionIds.delete(sessionId2);
+  const sessionDir = getSessionDir(sessionId2);
   const socketPath = meta.socketPath;
   if (socketPath.startsWith("tcp:")) {
-    safeUnlinkPortFile(sessionId);
+    safeUnlinkPortFile(sessionId2);
   } else if (socketPath.startsWith(sessionDir)) {
     safeUnlinkSocket(socketPath);
   }
@@ -5694,13 +5694,13 @@ async function cleanupBridgeSessions(sessionIds) {
     terminatedSessions: 0,
     errors: []
   };
-  for (const sessionId of uniqueSessionIds) {
+  for (const sessionId2 of uniqueSessionIds) {
     try {
-      ownedBridgeSessionIds.delete(sessionId);
-      const metaPath = getBridgeMetaPath(sessionId);
-      const socketPath = getBridgeSocketPath(sessionId);
-      const portPath = getBridgePortPath(sessionId);
-      const lockPath = getSessionLockPath(sessionId);
+      ownedBridgeSessionIds.delete(sessionId2);
+      const metaPath = getBridgeMetaPath(sessionId2);
+      const socketPath = getBridgeSocketPath(sessionId2);
+      const portPath = getBridgePortPath(sessionId2);
+      const lockPath = getSessionLockPath(sessionId2);
       const hasArtifacts = fs5.existsSync(metaPath) || fs5.existsSync(socketPath) || fs5.existsSync(portPath) || fs5.existsSync(lockPath);
       if (!hasArtifacts) {
         continue;
@@ -5708,7 +5708,7 @@ async function cleanupBridgeSessions(sessionIds) {
       result.foundSessions++;
       const meta = await safeReadJson(metaPath);
       if (meta && isValidBridgeMeta(meta)) {
-        const escalation = await killBridgeWithEscalation(sessionId);
+        const escalation = await killBridgeWithEscalation(sessionId2);
         if (escalation.terminatedBy) {
           result.terminatedSessions++;
         }
@@ -5719,13 +5719,13 @@ async function cleanupBridgeSessions(sessionIds) {
       }
       await removeFileIfExists(lockPath);
     } catch (error2) {
-      result.errors.push(`session=${sessionId}: ${error2.message}`);
+      result.errors.push(`session=${sessionId2}: ${error2.message}`);
     }
   }
   return result;
 }
-async function deleteBridgeMeta(sessionId) {
-  const metaPath = getBridgeMetaPath(sessionId);
+async function deleteBridgeMeta(sessionId2) {
+  const metaPath = getBridgeMetaPath(sessionId2);
   try {
     await fsPromises2.unlink(metaPath);
   } catch {
@@ -5867,15 +5867,15 @@ function getWorktreeNotepadPath(worktreeRoot) {
 function getWorktreeProjectMemoryPath(worktreeRoot) {
   return (0, import_path17.join)(getOmcRoot(worktreeRoot), "project-memory.json");
 }
-function validateSessionId(sessionId) {
-  if (!sessionId) {
+function validateSessionId(sessionId2) {
+  if (!sessionId2) {
     throw new Error("Session ID cannot be empty");
   }
-  if (sessionId.includes("..") || sessionId.includes("/") || sessionId.includes("\\")) {
-    throw new Error(`Invalid session ID: path traversal not allowed (${sessionId})`);
+  if (sessionId2.includes("..") || sessionId2.includes("/") || sessionId2.includes("\\")) {
+    throw new Error(`Invalid session ID: path traversal not allowed (${sessionId2})`);
   }
-  if (!SESSION_ID_REGEX.test(sessionId)) {
-    throw new Error(`Invalid session ID: must be alphanumeric with hyphens/underscores, max 256 chars (${sessionId})`);
+  if (!SESSION_ID_REGEX.test(sessionId2)) {
+    throw new Error(`Invalid session ID: must be alphanumeric with hyphens/underscores, max 256 chars (${sessionId2})`);
   }
 }
 function isValidTranscriptPath(transcriptPath) {
@@ -5903,14 +5903,14 @@ function isValidTranscriptPath(transcriptPath) {
   ];
   return allowedPrefixes.some((prefix) => normalized.startsWith(prefix));
 }
-function resolveSessionStatePath(stateName, sessionId, worktreeRoot) {
-  validateSessionId(sessionId);
+function resolveSessionStatePath(stateName, sessionId2, worktreeRoot) {
+  validateSessionId(sessionId2);
   const normalizedName = stateName.endsWith("-state") ? stateName : `${stateName}-state`;
-  return resolveOmcPath(`state/sessions/${sessionId}/${normalizedName}.json`, worktreeRoot);
+  return resolveOmcPath(`state/sessions/${sessionId2}/${normalizedName}.json`, worktreeRoot);
 }
-function getSessionStateDir(sessionId, worktreeRoot) {
-  validateSessionId(sessionId);
-  return (0, import_path17.join)(getOmcRoot(worktreeRoot), "state", "sessions", sessionId);
+function getSessionStateDir(sessionId2, worktreeRoot) {
+  validateSessionId(sessionId2);
+  return (0, import_path17.join)(getOmcRoot(worktreeRoot), "state", "sessions", sessionId2);
 }
 function listSessionIds(worktreeRoot) {
   const sessionsDir = (0, import_path17.join)(getOmcRoot(worktreeRoot), "state", "sessions");
@@ -5924,8 +5924,8 @@ function listSessionIds(worktreeRoot) {
     return [];
   }
 }
-function ensureSessionStateDir(sessionId, worktreeRoot) {
-  const sessionDir = getSessionStateDir(sessionId, worktreeRoot);
+function ensureSessionStateDir(sessionId2, worktreeRoot) {
+  const sessionDir = getSessionStateDir(sessionId2, worktreeRoot);
   if (!(0, import_fs14.existsSync)(sessionDir)) {
     (0, import_fs14.mkdirSync)(sessionDir, { recursive: true });
   }
@@ -6402,14 +6402,14 @@ function getStateSessionOwner(state) {
   const topLevelSessionId = state.session_id;
   return typeof topLevelSessionId === "string" && topLevelSessionId ? topLevelSessionId : void 0;
 }
-function canClearStateForSession(state, sessionId) {
+function canClearStateForSession(state, sessionId2) {
   const ownerSessionId = getStateSessionOwner(state);
-  return !ownerSessionId || ownerSessionId === sessionId;
+  return !ownerSessionId || ownerSessionId === sessionId2;
 }
-function resolveFile(mode, directory, sessionId) {
+function resolveFile(mode, directory, sessionId2) {
   const baseDir = directory || process.cwd();
-  if (sessionId) {
-    return resolveSessionStatePath(mode, sessionId, baseDir);
+  if (sessionId2) {
+    return resolveSessionStatePath(mode, sessionId2, baseDir);
   }
   return resolveStatePath(mode, baseDir);
 }
@@ -6421,18 +6421,18 @@ function getLegacyStateCandidates(mode, directory) {
     (0, import_path22.join)(getOmcRoot(baseDir), `${normalizedName}.json`)
   ];
 }
-function writeModeState(mode, state, directory, sessionId) {
+function writeModeState(mode, state, directory, sessionId2) {
   try {
     const baseDir = directory || process.cwd();
-    if (sessionId) {
-      ensureSessionStateDir(sessionId, baseDir);
+    if (sessionId2) {
+      ensureSessionStateDir(sessionId2, baseDir);
     } else {
       ensureOmcDir("state", baseDir);
     }
-    const filePath = resolveFile(mode, directory, sessionId);
+    const filePath = resolveFile(mode, directory, sessionId2);
     const envelope = {
       ...state,
-      _meta: { written_at: (/* @__PURE__ */ new Date()).toISOString(), mode, ...sessionId ? { sessionId } : {} }
+      _meta: { written_at: (/* @__PURE__ */ new Date()).toISOString(), mode, ...sessionId2 ? { sessionId: sessionId2 } : {} }
     };
     atomicWriteJsonSync(filePath, envelope);
     return true;
@@ -6440,8 +6440,8 @@ function writeModeState(mode, state, directory, sessionId) {
     return false;
   }
 }
-function readModeState(mode, directory, sessionId) {
-  const filePath = resolveFile(mode, directory, sessionId);
+function readModeState(mode, directory, sessionId2) {
+  const filePath = resolveFile(mode, directory, sessionId2);
   if (!(0, import_fs17.existsSync)(filePath)) {
     return null;
   }
@@ -6457,7 +6457,7 @@ function readModeState(mode, directory, sessionId) {
     return null;
   }
 }
-function clearModeStateFile(mode, directory, sessionId) {
+function clearModeStateFile(mode, directory, sessionId2) {
   let success = true;
   const unlinkIfPresent = (filePath) => {
     if (!(0, import_fs17.existsSync)(filePath)) {
@@ -6469,8 +6469,8 @@ function clearModeStateFile(mode, directory, sessionId) {
       success = false;
     }
   };
-  if (sessionId) {
-    unlinkIfPresent(resolveFile(mode, directory, sessionId));
+  if (sessionId2) {
+    unlinkIfPresent(resolveFile(mode, directory, sessionId2));
   } else {
     for (const legacyPath of getLegacyStateCandidates(mode, directory)) {
       unlinkIfPresent(legacyPath);
@@ -6479,7 +6479,7 @@ function clearModeStateFile(mode, directory, sessionId) {
       unlinkIfPresent(resolveSessionStatePath(mode, sid, directory));
     }
   }
-  if (sessionId) {
+  if (sessionId2) {
     for (const legacyPath of getLegacyStateCandidates(mode, directory)) {
       if (!(0, import_fs17.existsSync)(legacyPath)) {
         continue;
@@ -6487,7 +6487,7 @@ function clearModeStateFile(mode, directory, sessionId) {
       try {
         const content = (0, import_fs17.readFileSync)(legacyPath, "utf-8");
         const legacyState = JSON.parse(content);
-        if (canClearStateForSession(legacyState, sessionId)) {
+        if (canClearStateForSession(legacyState, sessionId2)) {
           (0, import_fs17.unlinkSync)(legacyPath);
         }
       } catch {
@@ -6558,10 +6558,10 @@ var init_mode_names = __esm({
 function getStateDir2(cwd2) {
   return (0, import_path23.join)(getOmcRoot(cwd2), "state");
 }
-function getStateFilePath(cwd2, mode, sessionId) {
+function getStateFilePath(cwd2, mode, sessionId2) {
   const config2 = MODE_CONFIGS[mode];
-  if (sessionId) {
-    return resolveSessionStatePath(mode, sessionId, cwd2);
+  if (sessionId2) {
+    return resolveSessionStatePath(mode, sessionId2, cwd2);
   }
   return (0, import_path23.join)(getStateDir2(cwd2), config2.stateFile);
 }
@@ -6570,14 +6570,14 @@ function getMarkerFilePath(cwd2, mode) {
   if (!config2.markerFile) return null;
   return (0, import_path23.join)(getStateDir2(cwd2), config2.markerFile);
 }
-function isJsonModeActive(cwd2, mode, sessionId) {
+function isJsonModeActive(cwd2, mode, sessionId2) {
   const config2 = MODE_CONFIGS[mode];
-  if (sessionId) {
-    const sessionStateFile = resolveSessionStatePath(mode, sessionId, cwd2);
+  if (sessionId2) {
+    const sessionStateFile = resolveSessionStatePath(mode, sessionId2, cwd2);
     try {
       const content = (0, import_fs18.readFileSync)(sessionStateFile, "utf-8");
       const state = JSON.parse(content);
-      if (state.session_id && state.session_id !== sessionId) {
+      if (state.session_id && state.session_id !== sessionId2) {
         return false;
       }
       if (config2.activeProperty) {
@@ -6606,13 +6606,13 @@ function isJsonModeActive(cwd2, mode, sessionId) {
     return false;
   }
 }
-function isModeActive(mode, cwd2, sessionId) {
-  return isJsonModeActive(cwd2, mode, sessionId);
+function isModeActive(mode, cwd2, sessionId2) {
+  return isJsonModeActive(cwd2, mode, sessionId2);
 }
-function getActiveModes(cwd2, sessionId) {
+function getActiveModes(cwd2, sessionId2) {
   const modes = [];
   for (const mode of Object.keys(MODE_CONFIGS)) {
-    if (isModeActive(mode, cwd2, sessionId)) {
+    if (isModeActive(mode, cwd2, sessionId2)) {
       modes.push(mode);
     }
   }
@@ -6633,20 +6633,20 @@ function canStartMode(mode, cwd2) {
   }
   return { allowed: true };
 }
-function getAllModeStatuses(cwd2, sessionId) {
+function getAllModeStatuses(cwd2, sessionId2) {
   return Object.keys(MODE_CONFIGS).map((mode) => ({
     mode,
-    active: isModeActive(mode, cwd2, sessionId),
-    stateFilePath: getStateFilePath(cwd2, mode, sessionId)
+    active: isModeActive(mode, cwd2, sessionId2),
+    stateFilePath: getStateFilePath(cwd2, mode, sessionId2)
   }));
 }
-function clearModeState(mode, cwd2, sessionId) {
+function clearModeState(mode, cwd2, sessionId2) {
   const config2 = MODE_CONFIGS[mode];
   let success = true;
   const markerFile = getMarkerFilePath(cwd2, mode);
-  const isSessionScopedClear = Boolean(sessionId);
-  if (isSessionScopedClear && sessionId) {
-    const sessionStateFile = resolveSessionStatePath(mode, sessionId, cwd2);
+  const isSessionScopedClear = Boolean(sessionId2);
+  if (isSessionScopedClear && sessionId2) {
+    const sessionStateFile = resolveSessionStatePath(mode, sessionId2, cwd2);
     try {
       (0, import_fs18.unlinkSync)(sessionStateFile);
     } catch (err) {
@@ -6658,7 +6658,7 @@ function clearModeState(mode, cwd2, sessionId) {
       const markerStateName = config2.markerFile.replace(/\.json$/i, "");
       const sessionMarkerFile = resolveSessionStatePath(
         markerStateName,
-        sessionId,
+        sessionId2,
         cwd2
       );
       try {
@@ -6673,7 +6673,7 @@ function clearModeState(mode, cwd2, sessionId) {
       try {
         const markerRaw = JSON.parse((0, import_fs18.readFileSync)(markerFile, "utf-8"));
         const markerSessionId = markerRaw.session_id ?? markerRaw.sessionId;
-        if (!markerSessionId || markerSessionId === sessionId) {
+        if (!markerSessionId || markerSessionId === sessionId2) {
           try {
             (0, import_fs18.unlinkSync)(markerFile);
           } catch (err) {
@@ -6708,7 +6708,7 @@ function clearModeState(mode, cwd2, sessionId) {
       try {
         const markerRaw = JSON.parse((0, import_fs18.readFileSync)(markerFile, "utf-8"));
         const markerSessionId = markerRaw.session_id ?? markerRaw.sessionId;
-        if (!markerSessionId || markerSessionId === sessionId) {
+        if (!markerSessionId || markerSessionId === sessionId2) {
           try {
             (0, import_fs18.unlinkSync)(markerFile);
           } catch (err) {
@@ -6976,11 +6976,11 @@ var init_collector = __esm({
        * Register a context entry for a session.
        * If an entry with the same source:id already exists, it will be replaced.
        */
-      register(sessionId, options) {
-        if (!this.sessions.has(sessionId)) {
-          this.sessions.set(sessionId, /* @__PURE__ */ new Map());
+      register(sessionId2, options) {
+        if (!this.sessions.has(sessionId2)) {
+          this.sessions.set(sessionId2, /* @__PURE__ */ new Map());
         }
-        const sessionMap = this.sessions.get(sessionId);
+        const sessionMap = this.sessions.get(sessionId2);
         const key = `${options.source}:${options.id}`;
         const entry = {
           id: options.id,
@@ -6995,8 +6995,8 @@ var init_collector = __esm({
       /**
        * Get pending context for a session without consuming it.
        */
-      getPending(sessionId) {
-        const sessionMap = this.sessions.get(sessionId);
+      getPending(sessionId2) {
+        const sessionMap = this.sessions.get(sessionId2);
         if (!sessionMap || sessionMap.size === 0) {
           return {
             merged: "",
@@ -7016,36 +7016,36 @@ var init_collector = __esm({
        * Get and consume pending context for a session.
        * After consumption, the session's context is cleared.
        */
-      consume(sessionId) {
-        const pending = this.getPending(sessionId);
-        this.clear(sessionId);
+      consume(sessionId2) {
+        const pending = this.getPending(sessionId2);
+        this.clear(sessionId2);
         return pending;
       }
       /**
        * Clear all context for a session.
        */
-      clear(sessionId) {
-        this.sessions.delete(sessionId);
+      clear(sessionId2) {
+        this.sessions.delete(sessionId2);
       }
       /**
        * Check if a session has pending context.
        */
-      hasPending(sessionId) {
-        const sessionMap = this.sessions.get(sessionId);
+      hasPending(sessionId2) {
+        const sessionMap = this.sessions.get(sessionId2);
         return sessionMap !== void 0 && sessionMap.size > 0;
       }
       /**
        * Get count of entries for a session.
        */
-      getEntryCount(sessionId) {
-        const sessionMap = this.sessions.get(sessionId);
+      getEntryCount(sessionId2) {
+        const sessionMap = this.sessions.get(sessionId2);
         return sessionMap?.size ?? 0;
       }
       /**
        * Remove a specific entry from a session.
        */
-      removeEntry(sessionId, source, id) {
-        const sessionMap = this.sessions.get(sessionId);
+      removeEntry(sessionId2, source, id) {
+        const sessionMap = this.sessions.get(sessionId2);
         if (!sessionMap) return false;
         const key = `${source}:${id}`;
         return sessionMap.delete(key);
@@ -7072,27 +7072,27 @@ var init_collector = __esm({
 });
 
 // src/hooks/subagent-tracker/session-replay.ts
-function getReplayFilePath(directory, sessionId) {
+function getReplayFilePath(directory, sessionId2) {
   const stateDir = (0, import_path34.join)(getOmcRoot(directory), "state");
   if (!(0, import_fs23.existsSync)(stateDir)) {
     (0, import_fs23.mkdirSync)(stateDir, { recursive: true });
   }
-  const safeId = sessionId.replace(/[^a-zA-Z0-9_-]/g, "_");
+  const safeId = sessionId2.replace(/[^a-zA-Z0-9_-]/g, "_");
   return (0, import_path34.join)(stateDir, `${REPLAY_PREFIX}${safeId}.jsonl`);
 }
-function getSessionStartTime(sessionId) {
-  if (!sessionStartTimes.has(sessionId)) {
-    sessionStartTimes.set(sessionId, Date.now());
+function getSessionStartTime(sessionId2) {
+  if (!sessionStartTimes.has(sessionId2)) {
+    sessionStartTimes.set(sessionId2, Date.now());
   }
-  return sessionStartTimes.get(sessionId);
+  return sessionStartTimes.get(sessionId2);
 }
-function getElapsedSeconds(sessionId) {
-  const start = getSessionStartTime(sessionId);
+function getElapsedSeconds(sessionId2) {
+  const start = getSessionStartTime(sessionId2);
   return Math.round((Date.now() - start) / 100) / 10;
 }
-function appendReplayEvent(directory, sessionId, event) {
+function appendReplayEvent(directory, sessionId2, event) {
   try {
-    const filePath = getReplayFilePath(directory, sessionId);
+    const filePath = getReplayFilePath(directory, sessionId2);
     if ((0, import_fs23.existsSync)(filePath)) {
       try {
         const stats = (0, import_fs23.statSync)(filePath);
@@ -7101,15 +7101,15 @@ function appendReplayEvent(directory, sessionId, event) {
       }
     }
     const replayEvent = {
-      t: getElapsedSeconds(sessionId),
+      t: getElapsedSeconds(sessionId2),
       ...event
     };
     (0, import_fs23.appendFileSync)(filePath, JSON.stringify(replayEvent) + "\n", "utf-8");
   } catch {
   }
 }
-function recordAgentStart(directory, sessionId, agentId, agentType, task, parentMode, model) {
-  appendReplayEvent(directory, sessionId, {
+function recordAgentStart(directory, sessionId2, agentId, agentType, task, parentMode, model) {
+  appendReplayEvent(directory, sessionId2, {
     agent: agentId.substring(0, 7),
     agent_type: agentType.replace("oh-my-claudecode:", ""),
     event: "agent_start",
@@ -7118,8 +7118,8 @@ function recordAgentStart(directory, sessionId, agentId, agentType, task, parent
     model
   });
 }
-function recordAgentStop(directory, sessionId, agentId, agentType, success, durationMs) {
-  appendReplayEvent(directory, sessionId, {
+function recordAgentStop(directory, sessionId2, agentId, agentType, success, durationMs) {
+  appendReplayEvent(directory, sessionId2, {
     agent: agentId.substring(0, 7),
     agent_type: agentType.replace("oh-my-claudecode:", ""),
     event: "agent_stop",
@@ -7127,15 +7127,15 @@ function recordAgentStop(directory, sessionId, agentId, agentType, success, dura
     duration_ms: durationMs
   });
 }
-function recordFileTouch(directory, sessionId, agentId, filePath) {
-  appendReplayEvent(directory, sessionId, {
+function recordFileTouch(directory, sessionId2, agentId, filePath) {
+  appendReplayEvent(directory, sessionId2, {
     agent: agentId.substring(0, 7),
     event: "file_touch",
     file: filePath.substring(0, 200)
   });
 }
-function readReplayEvents(directory, sessionId) {
-  const filePath = getReplayFilePath(directory, sessionId);
+function readReplayEvents(directory, sessionId2) {
+  const filePath = getReplayFilePath(directory, sessionId2);
   if (!(0, import_fs23.existsSync)(filePath)) return [];
   try {
     const content = (0, import_fs23.readFileSync)(filePath, "utf-8");
@@ -7172,10 +7172,10 @@ function detectCycles(sequence) {
   }
   return { cycles: 0, pattern: "" };
 }
-function getReplaySummary(directory, sessionId) {
-  const events = readReplayEvents(directory, sessionId);
+function getReplaySummary(directory, sessionId2) {
+  const events = readReplayEvents(directory, sessionId2);
   const summary = {
-    session_id: sessionId,
+    session_id: sessionId2,
     duration_seconds: 0,
     total_events: events.length,
     agents_spawned: 0,
@@ -9139,8 +9139,8 @@ function shouldBlockStandaloneUpdateInCurrentSession() {
   if (entrypoint) {
     return true;
   }
-  const sessionId = process.env.CLAUDE_SESSION_ID?.trim() || process.env.CLAUDECODE_SESSION_ID?.trim();
-  if (sessionId) {
+  const sessionId2 = process.env.CLAUDE_SESSION_ID?.trim() || process.env.CLAUDECODE_SESSION_ID?.trim();
+  if (sessionId2) {
     return true;
   }
   return false;
@@ -10331,48 +10331,48 @@ __export(ultrawork_exports, {
   shouldReinforceUltrawork: () => shouldReinforceUltrawork,
   writeUltraworkState: () => writeUltraworkState
 });
-function getStateFilePath2(directory, sessionId) {
+function getStateFilePath2(directory, sessionId2) {
   const baseDir = directory || process.cwd();
-  if (sessionId) {
-    return resolveSessionStatePath("ultrawork", sessionId, baseDir);
+  if (sessionId2) {
+    return resolveSessionStatePath("ultrawork", sessionId2, baseDir);
   }
   return resolveStatePath("ultrawork", baseDir);
 }
-function readUltraworkState(directory, sessionId) {
+function readUltraworkState(directory, sessionId2) {
   const state = readModeState(
     "ultrawork",
     directory,
-    sessionId
+    sessionId2
   );
-  if (state && sessionId && state.session_id && state.session_id !== sessionId) {
+  if (state && sessionId2 && state.session_id && state.session_id !== sessionId2) {
     return null;
   }
   return state;
 }
-function writeUltraworkState(state, directory, sessionId) {
+function writeUltraworkState(state, directory, sessionId2) {
   return writeModeState(
     "ultrawork",
     state,
     directory,
-    sessionId
+    sessionId2
   );
 }
-function activateUltrawork(prompt, sessionId, directory, linkedToRalph) {
+function activateUltrawork(prompt, sessionId2, directory, linkedToRalph) {
   const state = {
     active: true,
     started_at: (/* @__PURE__ */ new Date()).toISOString(),
     original_prompt: prompt,
-    session_id: sessionId,
+    session_id: sessionId2,
     project_path: directory || process.cwd(),
     reinforcement_count: 0,
     last_checked_at: (/* @__PURE__ */ new Date()).toISOString(),
     linked_to_ralph: linkedToRalph
   };
-  return writeUltraworkState(state, directory, sessionId);
+  return writeUltraworkState(state, directory, sessionId2);
 }
-function deactivateUltrawork(directory, sessionId) {
+function deactivateUltrawork(directory, sessionId2) {
   let success = true;
-  const stateFile = getStateFilePath2(directory, sessionId);
+  const stateFile = getStateFilePath2(directory, sessionId2);
   try {
     (0, import_fs37.unlinkSync)(stateFile);
   } catch (error2) {
@@ -10380,12 +10380,12 @@ function deactivateUltrawork(directory, sessionId) {
       success = false;
     }
   }
-  if (sessionId) {
+  if (sessionId2) {
     const legacyFile = getStateFilePath2(directory);
     try {
       const content = (0, import_fs37.readFileSync)(legacyFile, "utf-8");
       const legacyState = JSON.parse(content);
-      if (!legacyState.session_id || legacyState.session_id === sessionId) {
+      if (!legacyState.session_id || legacyState.session_id === sessionId2) {
         try {
           (0, import_fs37.unlinkSync)(legacyFile);
         } catch (error2) {
@@ -10399,24 +10399,24 @@ function deactivateUltrawork(directory, sessionId) {
   }
   return success;
 }
-function incrementReinforcement(directory, sessionId) {
-  const state = readUltraworkState(directory, sessionId);
+function incrementReinforcement(directory, sessionId2) {
+  const state = readUltraworkState(directory, sessionId2);
   if (!state || !state.active) {
     return null;
   }
   state.reinforcement_count += 1;
   state.last_checked_at = (/* @__PURE__ */ new Date()).toISOString();
-  if (writeUltraworkState(state, directory, sessionId)) {
+  if (writeUltraworkState(state, directory, sessionId2)) {
     return state;
   }
   return null;
 }
-function shouldReinforceUltrawork(sessionId, directory) {
-  const state = readUltraworkState(directory, sessionId);
+function shouldReinforceUltrawork(sessionId2, directory) {
+  const state = readUltraworkState(directory, sessionId2);
   if (!state || !state.active) {
     return false;
   }
-  if (!state.session_id || !sessionId || state.session_id !== sessionId) {
+  if (!state.session_id || !sessionId2 || state.session_id !== sessionId2) {
     return false;
   }
   return true;
@@ -10447,11 +10447,11 @@ Original task: ${state.original_prompt}
 }
 function createUltraworkStateHook(directory) {
   return {
-    activate: (prompt, sessionId) => activateUltrawork(prompt, sessionId, directory),
-    deactivate: (sessionId) => deactivateUltrawork(directory, sessionId),
-    getState: (sessionId) => readUltraworkState(directory, sessionId),
-    shouldReinforce: (sessionId) => shouldReinforceUltrawork(sessionId, directory),
-    incrementReinforcement: (sessionId) => incrementReinforcement(directory, sessionId)
+    activate: (prompt, sessionId2) => activateUltrawork(prompt, sessionId2, directory),
+    deactivate: (sessionId2) => deactivateUltrawork(directory, sessionId2),
+    getState: (sessionId2) => readUltraworkState(directory, sessionId2),
+    shouldReinforce: (sessionId2) => shouldReinforceUltrawork(sessionId2, directory),
+    incrementReinforcement: (sessionId2) => incrementReinforcement(directory, sessionId2)
   };
 }
 var import_fs37;
@@ -10472,17 +10472,17 @@ var init_types = __esm({
 });
 
 // src/hooks/team-pipeline/state.ts
-function getTeamStatePath(directory, sessionId) {
-  if (!sessionId) {
+function getTeamStatePath(directory, sessionId2) {
+  if (!sessionId2) {
     return `${directory}/.omc/state/team-state.json`;
   }
-  return resolveSessionStatePath("team", sessionId, directory);
+  return resolveSessionStatePath("team", sessionId2, directory);
 }
-function readTeamPipelineState(directory, sessionId) {
-  if (!sessionId) {
+function readTeamPipelineState(directory, sessionId2) {
+  if (!sessionId2) {
     return null;
   }
-  const statePath = getTeamStatePath(directory, sessionId);
+  const statePath = getTeamStatePath(directory, sessionId2);
   if (!(0, import_fs38.existsSync)(statePath)) {
     return null;
   }
@@ -10490,7 +10490,7 @@ function readTeamPipelineState(directory, sessionId) {
     const content = (0, import_fs38.readFileSync)(statePath, "utf-8");
     const state = JSON.parse(content);
     if (!state || typeof state !== "object") return null;
-    if (state.session_id && state.session_id !== sessionId) return null;
+    if (state.session_id && state.session_id !== sessionId2) return null;
     return state;
   } catch {
     return null;
@@ -10508,11 +10508,11 @@ var init_state = __esm({
 });
 
 // src/hooks/ralph/loop.ts
-function isUltraQAActive(directory, sessionId) {
-  if (sessionId) {
+function isUltraQAActive(directory, sessionId2) {
+  if (sessionId2) {
     const sessionFile = resolveSessionStatePath(
       "ultraqa",
-      sessionId,
+      sessionId2,
       directory
     );
     try {
@@ -10539,38 +10539,38 @@ function isUltraQAActive(directory, sessionId) {
     return false;
   }
 }
-function readRalphState(directory, sessionId) {
-  const state = readModeState("ralph", directory, sessionId);
-  if (state && sessionId && state.session_id && state.session_id !== sessionId) {
+function readRalphState(directory, sessionId2) {
+  const state = readModeState("ralph", directory, sessionId2);
+  if (state && sessionId2 && state.session_id && state.session_id !== sessionId2) {
     return null;
   }
   return state;
 }
-function writeRalphState(directory, state, sessionId) {
+function writeRalphState(directory, state, sessionId2) {
   return writeModeState(
     "ralph",
     state,
     directory,
-    sessionId
+    sessionId2
   );
 }
-function clearRalphState(directory, sessionId) {
-  return clearModeStateFile("ralph", directory, sessionId);
+function clearRalphState(directory, sessionId2) {
+  return clearModeStateFile("ralph", directory, sessionId2);
 }
-function clearLinkedUltraworkState(directory, sessionId) {
-  const state = readUltraworkState(directory, sessionId);
+function clearLinkedUltraworkState(directory, sessionId2) {
+  const state = readUltraworkState(directory, sessionId2);
   if (!state || !state.linked_to_ralph) {
     return true;
   }
-  return clearModeStateFile("ultrawork", directory, sessionId);
+  return clearModeStateFile("ultrawork", directory, sessionId2);
 }
-function incrementRalphIteration(directory, sessionId) {
-  const state = readRalphState(directory, sessionId);
+function incrementRalphIteration(directory, sessionId2) {
+  const state = readRalphState(directory, sessionId2);
   if (!state || !state.active) {
     return null;
   }
   state.iteration += 1;
-  if (writeRalphState(directory, state, sessionId)) {
+  if (writeRalphState(directory, state, sessionId2)) {
     return state;
   }
   return null;
@@ -10596,8 +10596,8 @@ function stripCriticModeFlag(prompt) {
   return prompt.replace(/--critic(?:=|\s+)([^\s]+)/gi, "").replace(/\s+/g, " ").trim();
 }
 function createRalphLoopHook(directory) {
-  const startLoop = (sessionId, prompt, options) => {
-    if (isUltraQAActive(directory, sessionId)) {
+  const startLoop = (sessionId2, prompt, options) => {
+    if (isUltraQAActive(directory, sessionId2)) {
       console.error(
         "Cannot start Ralph Loop while UltraQA is active. Cancel UltraQA first with /oh-my-claudecode:cancel."
       );
@@ -10611,12 +10611,12 @@ function createRalphLoopHook(directory) {
       max_iterations: options?.maxIterations ?? DEFAULT_MAX_ITERATIONS,
       started_at: now,
       prompt,
-      session_id: sessionId,
+      session_id: sessionId2,
       project_path: directory,
       linked_ultrawork: enableUltrawork,
       critic_mode: options?.criticMode ?? detectCriticModeFlag(prompt) ?? DEFAULT_RALPH_CRITIC_MODE
     };
-    const ralphSuccess = writeRalphState(directory, state, sessionId);
+    const ralphSuccess = writeRalphState(directory, state, sessionId2);
     if (ralphSuccess && enableUltrawork) {
       const ultraworkState = {
         active: true,
@@ -10625,10 +10625,10 @@ function createRalphLoopHook(directory) {
         started_at: now,
         last_checked_at: now,
         linked_to_ralph: true,
-        session_id: sessionId,
+        session_id: sessionId2,
         project_path: directory
       };
-      writeUltraworkState(ultraworkState, directory, sessionId);
+      writeUltraworkState(ultraworkState, directory, sessionId2);
     }
     if (ralphSuccess && hasPrd(directory)) {
       state.prd_mode = true;
@@ -10637,22 +10637,22 @@ function createRalphLoopHook(directory) {
         state.current_story_id = prdCompletion.nextStory.id;
       }
       initProgress(directory);
-      writeRalphState(directory, state, sessionId);
+      writeRalphState(directory, state, sessionId2);
     }
     return ralphSuccess;
   };
-  const cancelLoop = (sessionId) => {
-    const state = readRalphState(directory, sessionId);
-    if (!state || state.session_id !== sessionId) {
+  const cancelLoop = (sessionId2) => {
+    const state = readRalphState(directory, sessionId2);
+    if (!state || state.session_id !== sessionId2) {
       return false;
     }
     if (state.linked_ultrawork) {
-      clearLinkedUltraworkState(directory, sessionId);
+      clearLinkedUltraworkState(directory, sessionId2);
     }
-    return clearRalphState(directory, sessionId);
+    return clearRalphState(directory, sessionId2);
   };
-  const getState = (sessionId) => {
-    return readRalphState(directory, sessionId);
+  const getState = (sessionId2) => {
+    return readRalphState(directory, sessionId2);
   };
   return {
     startLoop,
@@ -10730,8 +10730,8 @@ function recordStoryProgress(directory, storyId, implementation, filesChanged, l
 function recordPattern(directory, pattern) {
   return addPattern2(directory, pattern);
 }
-function getTeamPhaseDirective(directory, sessionId) {
-  const teamState = readTeamPipelineState(directory, sessionId);
+function getTeamPhaseDirective(directory, sessionId2) {
+  const teamState = readTeamPipelineState(directory, sessionId2);
   if (!teamState || !teamState.active) {
     if (teamState) {
       const terminalPhases = ["complete", "failed"];
@@ -10851,14 +10851,14 @@ function getVerificationAgentStep(mode) {
    \`\`\``;
   }
 }
-function getVerificationStatePath(directory, sessionId) {
-  if (sessionId) {
-    return resolveSessionStatePath("ralph-verification", sessionId, directory);
+function getVerificationStatePath(directory, sessionId2) {
+  if (sessionId2) {
+    return resolveSessionStatePath("ralph-verification", sessionId2, directory);
   }
   return (0, import_path49.join)(getOmcRoot(directory), "ralph-verification.json");
 }
-function readVerificationState(directory, sessionId) {
-  const statePath = getVerificationStatePath(directory, sessionId);
+function readVerificationState(directory, sessionId2) {
+  const statePath = getVerificationStatePath(directory, sessionId2);
   if (!(0, import_fs40.existsSync)(statePath)) {
     return null;
   }
@@ -10868,10 +10868,10 @@ function readVerificationState(directory, sessionId) {
     return null;
   }
 }
-function writeVerificationState(directory, state, sessionId) {
-  const statePath = getVerificationStatePath(directory, sessionId);
-  if (sessionId) {
-    ensureSessionStateDir(sessionId, directory);
+function writeVerificationState(directory, state, sessionId2) {
+  const statePath = getVerificationStatePath(directory, sessionId2);
+  if (sessionId2) {
+    ensureSessionStateDir(sessionId2, directory);
   } else {
     const stateDir = getOmcRoot(directory);
     if (!(0, import_fs40.existsSync)(stateDir)) {
@@ -10889,8 +10889,8 @@ function writeVerificationState(directory, state, sessionId) {
     return false;
   }
 }
-function clearVerificationState(directory, sessionId) {
-  const statePath = getVerificationStatePath(directory, sessionId);
+function clearVerificationState(directory, sessionId2) {
+  const statePath = getVerificationStatePath(directory, sessionId2);
   if ((0, import_fs40.existsSync)(statePath)) {
     try {
       (0, import_fs40.unlinkSync)(statePath);
@@ -10901,7 +10901,7 @@ function clearVerificationState(directory, sessionId) {
   }
   return true;
 }
-function startVerification(directory, completionClaim, originalTask, criticMode, sessionId) {
+function startVerification(directory, completionClaim, originalTask, criticMode, sessionId2) {
   const state = {
     pending: true,
     completion_claim: completionClaim,
@@ -10911,11 +10911,11 @@ function startVerification(directory, completionClaim, originalTask, criticMode,
     original_task: originalTask,
     critic_mode: getCriticMode(criticMode)
   };
-  writeVerificationState(directory, state, sessionId);
+  writeVerificationState(directory, state, sessionId2);
   return state;
 }
-function recordArchitectFeedback(directory, approved, feedback, sessionId) {
-  const state = readVerificationState(directory, sessionId);
+function recordArchitectFeedback(directory, approved, feedback, sessionId2) {
+  const state = readVerificationState(directory, sessionId2);
   if (!state) {
     return null;
   }
@@ -10923,14 +10923,14 @@ function recordArchitectFeedback(directory, approved, feedback, sessionId) {
   state.architect_approved = approved;
   state.architect_feedback = feedback;
   if (approved) {
-    clearVerificationState(directory, sessionId);
+    clearVerificationState(directory, sessionId2);
     return { ...state, pending: false };
   }
   if (state.verification_attempts >= state.max_verification_attempts) {
-    clearVerificationState(directory, sessionId);
+    clearVerificationState(directory, sessionId2);
     return { ...state, pending: false };
   }
-  writeVerificationState(directory, state, sessionId);
+  writeVerificationState(directory, state, sessionId2);
   return state;
 }
 function getArchitectVerificationPrompt(state, currentStory) {
@@ -11157,12 +11157,12 @@ function debugLog(message, ...args) {
     console.error("[todo-continuation]", message, ...args);
   }
 }
-function isValidSessionId(sessionId) {
-  if (!sessionId || typeof sessionId !== "string") {
+function isValidSessionId(sessionId2) {
+  if (!sessionId2 || typeof sessionId2 !== "string") {
     return false;
   }
   const SAFE_SESSION_ID_PATTERN2 = /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,255}$/;
-  return SAFE_SESSION_ID_PATTERN2.test(sessionId);
+  return SAFE_SESSION_ID_PATTERN2.test(sessionId2);
 }
 function getStopReasonFields(context) {
   if (!context) return [];
@@ -11261,12 +11261,12 @@ function isAuthenticationError(context) {
   const endTurnReason = (context.end_turn_reason ?? context.endTurnReason ?? "").toLowerCase();
   return AUTHENTICATION_ERROR_PATTERNS.some((pattern) => reason.includes(pattern) || endTurnReason.includes(pattern));
 }
-function getTodoFilePaths(sessionId, directory) {
+function getTodoFilePaths(sessionId2, directory) {
   const claudeDir = getClaudeConfigDir();
   const paths = [];
-  if (sessionId) {
-    paths.push((0, import_path50.join)(claudeDir, "sessions", sessionId, "todos.json"));
-    paths.push((0, import_path50.join)(claudeDir, "todos", `${sessionId}.json`));
+  if (sessionId2) {
+    paths.push((0, import_path50.join)(claudeDir, "sessions", sessionId2, "todos.json"));
+    paths.push((0, import_path50.join)(claudeDir, "todos", `${sessionId2}.json`));
   }
   if (directory) {
     paths.push((0, import_path50.join)(getOmcRoot(directory), "todos.json"));
@@ -11298,11 +11298,11 @@ function parseTodoFile(filePath) {
 function isIncomplete(todo) {
   return todo.status !== "completed" && todo.status !== "cancelled";
 }
-function getTaskDirectory(sessionId) {
-  if (!isValidSessionId(sessionId)) {
+function getTaskDirectory(sessionId2) {
+  if (!isValidSessionId(sessionId2)) {
     return "";
   }
-  return (0, import_path50.join)(getClaudeConfigDir(), "tasks", sessionId);
+  return (0, import_path50.join)(getClaudeConfigDir(), "tasks", sessionId2);
 }
 function isValidTask(data) {
   if (data === null || typeof data !== "object") return false;
@@ -11310,11 +11310,11 @@ function isValidTask(data) {
   return typeof obj.id === "string" && obj.id.length > 0 && typeof obj.subject === "string" && obj.subject.length > 0 && typeof obj.status === "string" && // Accept 'deleted' as valid - matches Task interface status union type
   ["pending", "in_progress", "completed", "deleted"].includes(obj.status);
 }
-function readTaskFiles(sessionId) {
-  if (!isValidSessionId(sessionId)) {
+function readTaskFiles(sessionId2) {
+  if (!isValidSessionId(sessionId2)) {
     return [];
   }
-  const taskDir = getTaskDirectory(sessionId);
+  const taskDir = getTaskDirectory(sessionId2);
   if (!taskDir || !(0, import_fs41.existsSync)(taskDir)) return [];
   const tasks = [];
   try {
@@ -11329,18 +11329,18 @@ function readTaskFiles(sessionId) {
       }
     }
   } catch (err) {
-    debugLog("Failed to read task directory:", sessionId, err);
+    debugLog("Failed to read task directory:", sessionId2, err);
   }
   return tasks;
 }
 function isTaskIncomplete(task) {
   return task.status === "pending" || task.status === "in_progress";
 }
-function checkIncompleteTasks(sessionId) {
-  if (!isValidSessionId(sessionId)) {
+function checkIncompleteTasks(sessionId2) {
+  if (!isValidSessionId(sessionId2)) {
     return { count: 0, tasks: [], total: 0 };
   }
-  const tasks = readTaskFiles(sessionId);
+  const tasks = readTaskFiles(sessionId2);
   const incomplete = tasks.filter(isTaskIncomplete);
   return {
     count: incomplete.length,
@@ -11348,8 +11348,8 @@ function checkIncompleteTasks(sessionId) {
     total: tasks.length
   };
 }
-function checkLegacyTodos(sessionId, directory) {
-  const paths = getTodoFilePaths(sessionId, directory);
+function checkLegacyTodos(sessionId2, directory) {
+  const paths = getTodoFilePaths(sessionId2, directory);
   const seenContents = /* @__PURE__ */ new Set();
   const allTodos = [];
   const incompleteTodos = [];
@@ -11373,15 +11373,15 @@ function checkLegacyTodos(sessionId, directory) {
     source: incompleteTodos.length > 0 ? "todo" : "none"
   };
 }
-async function checkIncompleteTodos(sessionId, directory, stopContext) {
+async function checkIncompleteTodos(sessionId2, directory, stopContext) {
   if (isUserAbort(stopContext)) {
     return { count: 0, todos: [], total: 0, source: "none" };
   }
   let taskResult = null;
-  if (sessionId) {
-    taskResult = checkIncompleteTasks(sessionId);
+  if (sessionId2) {
+    taskResult = checkIncompleteTasks(sessionId2);
   }
-  const todoResult = checkLegacyTodos(sessionId, directory);
+  const todoResult = checkLegacyTodos(sessionId2, directory);
   if (taskResult && taskResult.count > 0) {
     return {
       count: taskResult.count,
@@ -11400,7 +11400,7 @@ async function checkIncompleteTodos(sessionId, directory, stopContext) {
 }
 function createTodoContinuationHook(directory) {
   return {
-    checkIncomplete: (sessionId) => checkIncompleteTodos(sessionId, directory)
+    checkIncomplete: (sessionId2) => checkIncompleteTodos(sessionId2, directory)
   };
 }
 function formatTodoStatus(result) {
@@ -13519,14 +13519,14 @@ function getSkillProtection(skillName, rawSkillName) {
 function getSkillConfig(skillName, rawSkillName) {
   return PROTECTION_CONFIGS[getSkillProtection(skillName, rawSkillName)];
 }
-function readSkillActiveState(directory, sessionId) {
-  const state = readModeState("skill-active", directory, sessionId);
+function readSkillActiveState(directory, sessionId2) {
+  const state = readModeState("skill-active", directory, sessionId2);
   if (!state || typeof state.active !== "boolean") {
     return null;
   }
   return state;
 }
-function writeSkillActiveState(directory, skillName, sessionId, rawSkillName) {
+function writeSkillActiveState(directory, skillName, sessionId2, rawSkillName) {
   const protection = getSkillProtection(skillName, rawSkillName);
   if (protection === "none") {
     return null;
@@ -13537,18 +13537,18 @@ function writeSkillActiveState(directory, skillName, sessionId, rawSkillName) {
   const state = {
     active: true,
     skill_name: normalized,
-    session_id: sessionId,
+    session_id: sessionId2,
     started_at: now,
     last_checked_at: now,
     reinforcement_count: 0,
     max_reinforcements: config2.maxReinforcements,
     stale_ttl_ms: config2.staleTtlMs
   };
-  const success = writeModeState("skill-active", state, directory, sessionId);
+  const success = writeModeState("skill-active", state, directory, sessionId2);
   return success ? state : null;
 }
-function clearSkillActiveState(directory, sessionId) {
-  return clearModeStateFile("skill-active", directory, sessionId);
+function clearSkillActiveState(directory, sessionId2) {
+  return clearModeStateFile("skill-active", directory, sessionId2);
 }
 function isSkillStateStale(state) {
   if (!state.active) return true;
@@ -13559,20 +13559,20 @@ function isSkillStateStale(state) {
   const age = Date.now() - mostRecent;
   return age > (state.stale_ttl_ms || 5 * 60 * 1e3);
 }
-function checkSkillActiveState(directory, sessionId) {
-  const state = readSkillActiveState(directory, sessionId);
+function checkSkillActiveState(directory, sessionId2) {
+  const state = readSkillActiveState(directory, sessionId2);
   if (!state || !state.active) {
     return { shouldBlock: false, message: "" };
   }
-  if (sessionId && state.session_id && state.session_id !== sessionId) {
+  if (sessionId2 && state.session_id && state.session_id !== sessionId2) {
     return { shouldBlock: false, message: "" };
   }
   if (isSkillStateStale(state)) {
-    clearSkillActiveState(directory, sessionId);
+    clearSkillActiveState(directory, sessionId2);
     return { shouldBlock: false, message: "" };
   }
   if (state.reinforcement_count >= state.max_reinforcements) {
-    clearSkillActiveState(directory, sessionId);
+    clearSkillActiveState(directory, sessionId2);
     return { shouldBlock: false, message: "" };
   }
   if (getActiveAgentCount(directory) > 0) {
@@ -13580,7 +13580,7 @@ function checkSkillActiveState(directory, sessionId) {
   }
   state.reinforcement_count += 1;
   state.last_checked_at = (/* @__PURE__ */ new Date()).toISOString();
-  const written = writeModeState("skill-active", state, directory, sessionId);
+  const written = writeModeState("skill-active", state, directory, sessionId2);
   if (!written) {
     return { shouldBlock: false, message: "" };
   }
@@ -14016,21 +14016,21 @@ var init_types3 = __esm({
 });
 
 // src/hooks/ultraqa/index.ts
-function readUltraQAState(directory, sessionId) {
-  return readModeState("ultraqa", directory, sessionId);
+function readUltraQAState(directory, sessionId2) {
+  return readModeState("ultraqa", directory, sessionId2);
 }
-function writeUltraQAState(directory, state, sessionId) {
-  return writeModeState("ultraqa", state, directory, sessionId);
+function writeUltraQAState(directory, state, sessionId2) {
+  return writeModeState("ultraqa", state, directory, sessionId2);
 }
-function clearUltraQAState(directory, sessionId) {
-  return clearModeStateFile("ultraqa", directory, sessionId);
+function clearUltraQAState(directory, sessionId2) {
+  return clearModeStateFile("ultraqa", directory, sessionId2);
 }
-function isRalphLoopActive(directory, sessionId) {
-  const ralphState = readRalphState(directory, sessionId);
+function isRalphLoopActive(directory, sessionId2) {
+  const ralphState = readRalphState(directory, sessionId2);
   return ralphState !== null && ralphState.active === true;
 }
-function startUltraQA(directory, goalType, sessionId, options) {
-  if (isRalphLoopActive(directory, sessionId)) {
+function startUltraQA(directory, goalType, sessionId2, options) {
+  if (isRalphLoopActive(directory, sessionId2)) {
     return {
       success: false,
       error: "Cannot start UltraQA while Ralph Loop is active. Cancel Ralph Loop first with /oh-my-claudecode:cancel."
@@ -14044,10 +14044,10 @@ function startUltraQA(directory, goalType, sessionId, options) {
     max_cycles: options?.maxCycles ?? DEFAULT_MAX_CYCLES,
     failures: [],
     started_at: (/* @__PURE__ */ new Date()).toISOString(),
-    session_id: sessionId,
+    session_id: sessionId2,
     project_path: directory
   };
-  const written = writeUltraQAState(directory, state, sessionId);
+  const written = writeUltraQAState(directory, state, sessionId2);
   return { success: written };
 }
 var DEFAULT_MAX_CYCLES;
@@ -14066,30 +14066,30 @@ function ensureAutopilotDir(directory) {
   (0, import_fs47.mkdirSync)(autopilotDir, { recursive: true });
   return autopilotDir;
 }
-function readAutopilotState(directory, sessionId) {
+function readAutopilotState(directory, sessionId2) {
   const state = readModeState(
     "autopilot",
     directory,
-    sessionId
+    sessionId2
   );
-  if (state && sessionId && state.session_id && state.session_id !== sessionId) {
+  if (state && sessionId2 && state.session_id && state.session_id !== sessionId2) {
     return null;
   }
   return state;
 }
-function writeAutopilotState(directory, state, sessionId) {
+function writeAutopilotState(directory, state, sessionId2) {
   return writeModeState(
     "autopilot",
     state,
     directory,
-    sessionId
+    sessionId2
   );
 }
-function clearAutopilotState(directory, sessionId) {
-  return clearModeStateFile("autopilot", directory, sessionId);
+function clearAutopilotState(directory, sessionId2) {
+  return clearModeStateFile("autopilot", directory, sessionId2);
 }
-function getAutopilotStateAge(directory, sessionId) {
-  const stateFile = sessionId ? resolveSessionStatePath("autopilot", sessionId, directory) : resolveStatePath("autopilot", directory);
+function getAutopilotStateAge(directory, sessionId2) {
+  const stateFile = sessionId2 ? resolveSessionStatePath("autopilot", sessionId2, directory) : resolveStatePath("autopilot", directory);
   try {
     const stats = (0, import_fs47.statSync)(stateFile);
     return Date.now() - stats.mtimeMs;
@@ -14100,11 +14100,11 @@ function getAutopilotStateAge(directory, sessionId) {
     return null;
   }
 }
-function isAutopilotActive(directory, sessionId) {
-  const state = readAutopilotState(directory, sessionId);
+function isAutopilotActive(directory, sessionId2) {
+  const state = readAutopilotState(directory, sessionId2);
   return state !== null && state.active === true;
 }
-function initAutopilot(directory, idea, sessionId, config2) {
+function initAutopilot(directory, idea, sessionId2, config2) {
   const canStart = canStartMode("autopilot", directory);
   if (!canStart.allowed) {
     console.error(canStart.message);
@@ -14155,15 +14155,15 @@ function initAutopilot(directory, idea, sessionId, config2) {
     phase_durations: {},
     total_agents_spawned: 0,
     wisdom_entries: 0,
-    session_id: sessionId,
+    session_id: sessionId2,
     project_path: directory
   };
   ensureAutopilotDir(directory);
-  writeAutopilotState(directory, state, sessionId);
+  writeAutopilotState(directory, state, sessionId2);
   return state;
 }
-function transitionPhase(directory, newPhase, sessionId) {
-  const state = readAutopilotState(directory, sessionId);
+function transitionPhase(directory, newPhase, sessionId2) {
+  const state = readAutopilotState(directory, sessionId2);
   if (!state || !state.active) {
     return null;
   }
@@ -14180,44 +14180,44 @@ function transitionPhase(directory, newPhase, sessionId) {
     state.completed_at = now;
     state.active = false;
   }
-  writeAutopilotState(directory, state, sessionId);
+  writeAutopilotState(directory, state, sessionId2);
   return state;
 }
-function incrementAgentCount(directory, count = 1, sessionId) {
-  const state = readAutopilotState(directory, sessionId);
+function incrementAgentCount(directory, count = 1, sessionId2) {
+  const state = readAutopilotState(directory, sessionId2);
   if (!state) return false;
   state.total_agents_spawned += count;
-  return writeAutopilotState(directory, state, sessionId);
+  return writeAutopilotState(directory, state, sessionId2);
 }
-function updateExpansion(directory, updates, sessionId) {
-  const state = readAutopilotState(directory, sessionId);
+function updateExpansion(directory, updates, sessionId2) {
+  const state = readAutopilotState(directory, sessionId2);
   if (!state) return false;
   state.expansion = { ...state.expansion, ...updates };
-  return writeAutopilotState(directory, state, sessionId);
+  return writeAutopilotState(directory, state, sessionId2);
 }
-function updatePlanning(directory, updates, sessionId) {
-  const state = readAutopilotState(directory, sessionId);
+function updatePlanning(directory, updates, sessionId2) {
+  const state = readAutopilotState(directory, sessionId2);
   if (!state) return false;
   state.planning = { ...state.planning, ...updates };
-  return writeAutopilotState(directory, state, sessionId);
+  return writeAutopilotState(directory, state, sessionId2);
 }
-function updateExecution(directory, updates, sessionId) {
-  const state = readAutopilotState(directory, sessionId);
+function updateExecution(directory, updates, sessionId2) {
+  const state = readAutopilotState(directory, sessionId2);
   if (!state) return false;
   state.execution = { ...state.execution, ...updates };
-  return writeAutopilotState(directory, state, sessionId);
+  return writeAutopilotState(directory, state, sessionId2);
 }
-function updateQA(directory, updates, sessionId) {
-  const state = readAutopilotState(directory, sessionId);
+function updateQA(directory, updates, sessionId2) {
+  const state = readAutopilotState(directory, sessionId2);
   if (!state) return false;
   state.qa = { ...state.qa, ...updates };
-  return writeAutopilotState(directory, state, sessionId);
+  return writeAutopilotState(directory, state, sessionId2);
 }
-function updateValidation(directory, updates, sessionId) {
-  const state = readAutopilotState(directory, sessionId);
+function updateValidation(directory, updates, sessionId2) {
+  const state = readAutopilotState(directory, sessionId2);
   if (!state) return false;
   state.validation = { ...state.validation, ...updates };
-  return writeAutopilotState(directory, state, sessionId);
+  return writeAutopilotState(directory, state, sessionId2);
 }
 function getSpecPath(directory) {
   return (0, import_path56.join)(getOmcRoot(directory), SPEC_DIR, "spec.md");
@@ -14229,15 +14229,15 @@ function getPlanPath(directory) {
     loadConfig()
   );
 }
-function transitionRalphToUltraQA(directory, sessionId) {
-  const autopilotState = readAutopilotState(directory, sessionId);
+function transitionRalphToUltraQA(directory, sessionId2) {
+  const autopilotState = readAutopilotState(directory, sessionId2);
   if (!autopilotState || autopilotState.phase !== "execution") {
     return {
       success: false,
       error: "Not in execution phase - cannot transition to QA"
     };
   }
-  const ralphState = readRalphState(directory, sessionId);
+  const ralphState = readRalphState(directory, sessionId2);
   const executionUpdated = updateExecution(
     directory,
     {
@@ -14245,7 +14245,7 @@ function transitionRalphToUltraQA(directory, sessionId) {
       ralph_completed_at: (/* @__PURE__ */ new Date()).toISOString(),
       ultrawork_active: false
     },
-    sessionId
+    sessionId2
   );
   if (!executionUpdated) {
     return {
@@ -14254,57 +14254,57 @@ function transitionRalphToUltraQA(directory, sessionId) {
     };
   }
   if (ralphState) {
-    writeRalphState(directory, { ...ralphState, active: false }, sessionId);
+    writeRalphState(directory, { ...ralphState, active: false }, sessionId2);
   }
   if (ralphState?.linked_ultrawork) {
-    clearLinkedUltraworkState(directory, sessionId);
+    clearLinkedUltraworkState(directory, sessionId2);
   }
-  const newState = transitionPhase(directory, "qa", sessionId);
+  const newState = transitionPhase(directory, "qa", sessionId2);
   if (!newState) {
     if (ralphState) {
-      writeRalphState(directory, ralphState, sessionId);
+      writeRalphState(directory, ralphState, sessionId2);
     }
     return {
       success: false,
       error: "Failed to transition to QA phase"
     };
   }
-  const qaResult = startUltraQA(directory, "tests", sessionId, {
+  const qaResult = startUltraQA(directory, "tests", sessionId2, {
     maxCycles: 5
   });
   if (!qaResult.success) {
     if (ralphState) {
-      writeRalphState(directory, ralphState, sessionId);
+      writeRalphState(directory, ralphState, sessionId2);
     }
-    transitionPhase(directory, "execution", sessionId);
-    updateExecution(directory, { ralph_completed_at: void 0 }, sessionId);
+    transitionPhase(directory, "execution", sessionId2);
+    updateExecution(directory, { ralph_completed_at: void 0 }, sessionId2);
     return {
       success: false,
       error: qaResult.error || "Failed to start UltraQA"
     };
   }
-  clearRalphState(directory, sessionId);
+  clearRalphState(directory, sessionId2);
   return {
     success: true,
     state: newState
   };
 }
-function transitionUltraQAToValidation(directory, sessionId) {
-  const autopilotState = readAutopilotState(directory, sessionId);
+function transitionUltraQAToValidation(directory, sessionId2) {
+  const autopilotState = readAutopilotState(directory, sessionId2);
   if (!autopilotState || autopilotState.phase !== "qa") {
     return {
       success: false,
       error: "Not in QA phase - cannot transition to validation"
     };
   }
-  const qaState = readUltraQAState(directory, sessionId);
+  const qaState = readUltraQAState(directory, sessionId2);
   const qaUpdated = updateQA(
     directory,
     {
       ultraqa_cycles: qaState?.cycle ?? autopilotState.qa.ultraqa_cycles,
       qa_completed_at: (/* @__PURE__ */ new Date()).toISOString()
     },
-    sessionId
+    sessionId2
   );
   if (!qaUpdated) {
     return {
@@ -14312,8 +14312,8 @@ function transitionUltraQAToValidation(directory, sessionId) {
       error: "Failed to update QA state"
     };
   }
-  clearUltraQAState(directory, sessionId);
-  const newState = transitionPhase(directory, "validation", sessionId);
+  clearUltraQAState(directory, sessionId2);
+  const newState = transitionPhase(directory, "validation", sessionId2);
   if (!newState) {
     return {
       success: false,
@@ -14325,8 +14325,8 @@ function transitionUltraQAToValidation(directory, sessionId) {
     state: newState
   };
 }
-function transitionToComplete(directory, sessionId) {
-  const state = transitionPhase(directory, "complete", sessionId);
+function transitionToComplete(directory, sessionId2) {
+  const state = transitionPhase(directory, "complete", sessionId2);
   if (!state) {
     return {
       success: false,
@@ -14335,8 +14335,8 @@ function transitionToComplete(directory, sessionId) {
   }
   return { success: true, state };
 }
-function transitionToFailed(directory, error2, sessionId) {
-  const state = transitionPhase(directory, "failed", sessionId);
+function transitionToFailed(directory, error2, sessionId2) {
+  const state = transitionPhase(directory, "failed", sessionId2);
   if (!state) {
     return {
       success: false,
@@ -14806,8 +14806,8 @@ var init_prompts = __esm({
 });
 
 // src/hooks/autopilot/validation.ts
-function recordValidationVerdict(directory, type, verdict, issues, sessionId) {
-  const state = readAutopilotState(directory, sessionId);
+function recordValidationVerdict(directory, type, verdict, issues, sessionId2) {
+  const state = readAutopilotState(directory, sessionId2);
   if (!state || state.phase !== "validation") {
     return false;
   }
@@ -14830,10 +14830,10 @@ function recordValidationVerdict(directory, type, verdict, issues, sessionId) {
       (v) => v.verdict === "APPROVED"
     );
   }
-  return writeAutopilotState(directory, state, sessionId);
+  return writeAutopilotState(directory, state, sessionId2);
 }
-function getValidationStatus(directory, sessionId) {
-  const state = readAutopilotState(directory, sessionId);
+function getValidationStatus(directory, sessionId2) {
+  const state = readAutopilotState(directory, sessionId2);
   if (!state) {
     return null;
   }
@@ -14851,8 +14851,8 @@ function getValidationStatus(directory, sessionId) {
     issues: allIssues
   };
 }
-function startValidationRound(directory, sessionId) {
-  const state = readAutopilotState(directory, sessionId);
+function startValidationRound(directory, sessionId2) {
+  const state = readAutopilotState(directory, sessionId2);
   if (!state || state.phase !== "validation") {
     return false;
   }
@@ -14860,10 +14860,10 @@ function startValidationRound(directory, sessionId) {
   state.validation.verdicts = [];
   state.validation.all_approved = false;
   state.validation.architects_spawned = 0;
-  return writeAutopilotState(directory, state, sessionId);
+  return writeAutopilotState(directory, state, sessionId2);
 }
-function shouldRetryValidation(directory, maxRounds = 3, sessionId) {
-  const state = readAutopilotState(directory, sessionId);
+function shouldRetryValidation(directory, maxRounds = 3, sessionId2) {
+  const state = readAutopilotState(directory, sessionId2);
   if (!state) {
     return false;
   }
@@ -14873,8 +14873,8 @@ function shouldRetryValidation(directory, maxRounds = 3, sessionId) {
   const canRetry = state.validation.validation_rounds < maxRounds;
   return hasRejection && canRetry;
 }
-function getIssuesToFix(directory, sessionId) {
-  const state = readAutopilotState(directory, sessionId);
+function getIssuesToFix(directory, sessionId2) {
+  const state = readAutopilotState(directory, sessionId2);
   if (!state) {
     return [];
   }
@@ -14970,8 +14970,8 @@ function formatValidationResults(state, _sessionId) {
   }
   return lines.join("\n");
 }
-function generateSummary(directory, sessionId) {
-  const state = readAutopilotState(directory, sessionId);
+function generateSummary(directory, sessionId2) {
+  const state = readAutopilotState(directory, sessionId2);
   if (!state) {
     return null;
   }
@@ -15101,8 +15101,8 @@ var init_validation = __esm({
 });
 
 // src/hooks/autopilot/cancel.ts
-function cancelAutopilot(directory, sessionId) {
-  const state = readAutopilotState(directory, sessionId);
+function cancelAutopilot(directory, sessionId2) {
+  const state = readAutopilotState(directory, sessionId2);
   if (!state) {
     return {
       success: false,
@@ -15116,34 +15116,34 @@ function cancelAutopilot(directory, sessionId) {
     };
   }
   const cleanedUp = [];
-  const ralphState = sessionId ? readRalphState(directory, sessionId) : readRalphState(directory);
+  const ralphState = sessionId2 ? readRalphState(directory, sessionId2) : readRalphState(directory);
   if (ralphState?.active) {
     if (ralphState.linked_ultrawork) {
-      if (sessionId) {
-        clearLinkedUltraworkState(directory, sessionId);
+      if (sessionId2) {
+        clearLinkedUltraworkState(directory, sessionId2);
       } else {
         clearLinkedUltraworkState(directory);
       }
       cleanedUp.push("ultrawork");
     }
-    if (sessionId) {
-      clearRalphState(directory, sessionId);
+    if (sessionId2) {
+      clearRalphState(directory, sessionId2);
     } else {
       clearRalphState(directory);
     }
     cleanedUp.push("ralph");
   }
-  const ultraqaState = sessionId ? readUltraQAState(directory, sessionId) : readUltraQAState(directory);
+  const ultraqaState = sessionId2 ? readUltraQAState(directory, sessionId2) : readUltraQAState(directory);
   if (ultraqaState?.active) {
-    if (sessionId) {
-      clearUltraQAState(directory, sessionId);
+    if (sessionId2) {
+      clearUltraQAState(directory, sessionId2);
     } else {
       clearUltraQAState(directory);
     }
     cleanedUp.push("ultraqa");
   }
   state.active = false;
-  writeAutopilotState(directory, state, sessionId);
+  writeAutopilotState(directory, state, sessionId2);
   const cleanupMsg = cleanedUp.length > 0 ? ` Cleaned up: ${cleanedUp.join(", ")}.` : "";
   return {
     success: true,
@@ -15151,45 +15151,45 @@ function cancelAutopilot(directory, sessionId) {
     preservedState: state
   };
 }
-function clearAutopilot(directory, sessionId) {
-  const state = readAutopilotState(directory, sessionId);
+function clearAutopilot(directory, sessionId2) {
+  const state = readAutopilotState(directory, sessionId2);
   if (!state) {
     return {
       success: true,
       message: "No autopilot state to clear"
     };
   }
-  const ralphState = sessionId ? readRalphState(directory, sessionId) : readRalphState(directory);
+  const ralphState = sessionId2 ? readRalphState(directory, sessionId2) : readRalphState(directory);
   if (ralphState) {
     if (ralphState.linked_ultrawork) {
-      if (sessionId) {
-        clearLinkedUltraworkState(directory, sessionId);
+      if (sessionId2) {
+        clearLinkedUltraworkState(directory, sessionId2);
       } else {
         clearLinkedUltraworkState(directory);
       }
     }
-    if (sessionId) {
-      clearRalphState(directory, sessionId);
+    if (sessionId2) {
+      clearRalphState(directory, sessionId2);
     } else {
       clearRalphState(directory);
     }
   }
-  const ultraqaState = sessionId ? readUltraQAState(directory, sessionId) : readUltraQAState(directory);
+  const ultraqaState = sessionId2 ? readUltraQAState(directory, sessionId2) : readUltraQAState(directory);
   if (ultraqaState) {
-    if (sessionId) {
-      clearUltraQAState(directory, sessionId);
+    if (sessionId2) {
+      clearUltraQAState(directory, sessionId2);
     } else {
       clearUltraQAState(directory);
     }
   }
-  clearAutopilotState(directory, sessionId);
+  clearAutopilotState(directory, sessionId2);
   return {
     success: true,
     message: "Autopilot state cleared completely"
   };
 }
-function canResumeAutopilot(directory, sessionId) {
-  const state = readAutopilotState(directory, sessionId);
+function canResumeAutopilot(directory, sessionId2) {
+  const state = readAutopilotState(directory, sessionId2);
   if (!state) {
     return { canResume: false };
   }
@@ -15199,9 +15199,9 @@ function canResumeAutopilot(directory, sessionId) {
   if (state.active) {
     return { canResume: false, state, resumePhase: state.phase };
   }
-  const ageMs = getAutopilotStateAge(directory, sessionId);
+  const ageMs = getAutopilotStateAge(directory, sessionId2);
   if (ageMs !== null && ageMs > STALE_STATE_MAX_AGE_MS) {
-    clearAutopilotState(directory, sessionId);
+    clearAutopilotState(directory, sessionId2);
     return { canResume: false, state, resumePhase: state.phase };
   }
   return {
@@ -15210,8 +15210,8 @@ function canResumeAutopilot(directory, sessionId) {
     resumePhase: state.phase
   };
 }
-function resumeAutopilot(directory, sessionId) {
-  const { canResume, state } = canResumeAutopilot(directory, sessionId);
+function resumeAutopilot(directory, sessionId2) {
+  const { canResume, state } = canResumeAutopilot(directory, sessionId2);
   if (!canResume || !state) {
     return {
       success: false,
@@ -15220,7 +15220,7 @@ function resumeAutopilot(directory, sessionId) {
   }
   state.active = true;
   state.iteration++;
-  if (!writeAutopilotState(directory, state, sessionId)) {
+  if (!writeAutopilotState(directory, state, sessionId2)) {
     return {
       success: false,
       message: "Failed to update autopilot state"
@@ -15687,15 +15687,15 @@ function readPipelineTracking(state) {
   const extended = state;
   return extended.pipeline ?? null;
 }
-function writePipelineTracking(directory, tracking, sessionId) {
-  const state = readAutopilotState(directory, sessionId);
+function writePipelineTracking(directory, tracking, sessionId2) {
+  const state = readAutopilotState(directory, sessionId2);
   if (!state) return false;
   state.pipeline = tracking;
-  return writeAutopilotState(directory, state, sessionId);
+  return writeAutopilotState(directory, state, sessionId2);
 }
-function initPipeline(directory, idea, sessionId, autopilotConfig, pipelineConfig, deprecatedMode) {
+function initPipeline(directory, idea, sessionId2, autopilotConfig, pipelineConfig, deprecatedMode) {
   const resolvedConfig = resolvePipelineConfig(pipelineConfig, deprecatedMode);
-  const state = initAutopilot(directory, idea, sessionId, autopilotConfig);
+  const state = initAutopilot(directory, idea, sessionId2, autopilotConfig);
   if (!state) return null;
   const tracking = buildPipelineTracking(resolvedConfig);
   if (tracking.currentStageIndex >= 0 && tracking.currentStageIndex < tracking.stages.length) {
@@ -15703,7 +15703,7 @@ function initPipeline(directory, idea, sessionId, autopilotConfig, pipelineConfi
     tracking.stages[tracking.currentStageIndex].startedAt = (/* @__PURE__ */ new Date()).toISOString();
   }
   state.pipeline = tracking;
-  writeAutopilotState(directory, state, sessionId);
+  writeAutopilotState(directory, state, sessionId2);
   return state;
 }
 function getCurrentStageAdapter(tracking) {
@@ -15726,8 +15726,8 @@ function getNextStageAdapter(tracking) {
   }
   return null;
 }
-function advanceStage(directory, sessionId) {
-  const state = readAutopilotState(directory, sessionId);
+function advanceStage(directory, sessionId2) {
+  const state = readAutopilotState(directory, sessionId2);
   if (!state) return { adapter: null, phase: "failed" };
   const tracking = readPipelineTracking(state);
   if (!tracking) return { adapter: null, phase: "failed" };
@@ -15751,13 +15751,13 @@ function advanceStage(directory, sessionId) {
   }
   if (nextIndex < 0) {
     tracking.currentStageIndex = stages.length;
-    writePipelineTracking(directory, tracking, sessionId);
+    writePipelineTracking(directory, tracking, sessionId2);
     return { adapter: null, phase: "complete" };
   }
   tracking.currentStageIndex = nextIndex;
   stages[nextIndex].status = "active";
   stages[nextIndex].startedAt = (/* @__PURE__ */ new Date()).toISOString();
-  writePipelineTracking(directory, tracking, sessionId);
+  writePipelineTracking(directory, tracking, sessionId2);
   const nextAdapter = getAdapterById(stages[nextIndex].id);
   if (nextAdapter.onEnter) {
     const context = buildContext(state, tracking);
@@ -15765,8 +15765,8 @@ function advanceStage(directory, sessionId) {
   }
   return { adapter: nextAdapter, phase: stages[nextIndex].id };
 }
-function failCurrentStage(directory, error2, sessionId) {
-  const state = readAutopilotState(directory, sessionId);
+function failCurrentStage(directory, error2, sessionId2) {
+  const state = readAutopilotState(directory, sessionId2);
   if (!state) return false;
   const tracking = readPipelineTracking(state);
   if (!tracking) return false;
@@ -15775,10 +15775,10 @@ function failCurrentStage(directory, error2, sessionId) {
     stages[currentStageIndex].status = "failed";
     stages[currentStageIndex].error = error2;
   }
-  return writePipelineTracking(directory, tracking, sessionId);
+  return writePipelineTracking(directory, tracking, sessionId2);
 }
-function incrementStageIteration(directory, sessionId) {
-  const state = readAutopilotState(directory, sessionId);
+function incrementStageIteration(directory, sessionId2) {
+  const state = readAutopilotState(directory, sessionId2);
   if (!state) return false;
   const tracking = readPipelineTracking(state);
   if (!tracking) return false;
@@ -15786,7 +15786,7 @@ function incrementStageIteration(directory, sessionId) {
   if (currentStageIndex >= 0 && currentStageIndex < stages.length) {
     stages[currentStageIndex].iterations++;
   }
-  return writePipelineTracking(directory, tracking, sessionId);
+  return writePipelineTracking(directory, tracking, sessionId2);
 }
 function getCurrentCompletionSignal(tracking) {
   const { stages, currentStageIndex } = tracking;
@@ -15801,8 +15801,8 @@ function getSignalToStageMap() {
   }
   return map;
 }
-function generatePipelinePrompt(directory, sessionId) {
-  const state = readAutopilotState(directory, sessionId);
+function generatePipelinePrompt(directory, sessionId2) {
+  const state = readAutopilotState(directory, sessionId2);
   if (!state) return null;
   const tracking = readPipelineTracking(state);
   if (!tracking) return null;
@@ -15914,12 +15914,12 @@ var init_pipeline = __esm({
 });
 
 // src/hooks/autopilot/enforcement.ts
-function detectSignal(sessionId, signal) {
+function detectSignal(sessionId2, signal) {
   const claudeDir = getClaudeConfigDir();
   const possiblePaths = [
-    (0, import_path57.join)(claudeDir, "sessions", sessionId, "transcript.md"),
-    (0, import_path57.join)(claudeDir, "sessions", sessionId, "messages.json"),
-    (0, import_path57.join)(claudeDir, "transcripts", `${sessionId}.md`)
+    (0, import_path57.join)(claudeDir, "sessions", sessionId2, "transcript.md"),
+    (0, import_path57.join)(claudeDir, "sessions", sessionId2, "messages.json"),
+    (0, import_path57.join)(claudeDir, "transcripts", `${sessionId2}.md`)
   ];
   const pattern = SIGNAL_PATTERNS[signal];
   if (!pattern) return false;
@@ -15953,9 +15953,9 @@ function getExpectedSignalForPhase(phase) {
       return null;
   }
 }
-function detectAnySignal(sessionId) {
+function detectAnySignal(sessionId2) {
   for (const signal of Object.keys(SIGNAL_PATTERNS)) {
-    if (detectSignal(sessionId, signal)) {
+    if (detectSignal(sessionId2, signal)) {
       return signal;
     }
   }
@@ -15982,20 +15982,20 @@ function getNextPhase(current) {
       return null;
   }
 }
-async function checkAutopilot(sessionId, directory) {
+async function checkAutopilot(sessionId2, directory) {
   const workingDir = directory || process.cwd();
-  const state = readAutopilotState(workingDir, sessionId);
+  const state = readAutopilotState(workingDir, sessionId2);
   if (!state || !state.active) {
     return null;
   }
-  if (state.session_id !== sessionId) {
+  if (state.session_id !== sessionId2) {
     return null;
   }
   if (isAwaitingConfirmation(state)) {
     return null;
   }
   if (state.iteration >= state.max_iterations) {
-    transitionPhase(workingDir, "failed", sessionId);
+    transitionPhase(workingDir, "failed", sessionId2);
     return {
       shouldBlock: false,
       message: `[AUTOPILOT STOPPED] Max iterations (${state.max_iterations}) reached. Consider reviewing progress.`,
@@ -16017,45 +16017,45 @@ async function checkAutopilot(sessionId, directory) {
     };
   }
   if (hasPipelineTracking(state)) {
-    return checkPipelineAutopilot(state, sessionId, workingDir);
+    return checkPipelineAutopilot(state, sessionId2, workingDir);
   }
   const expectedSignal = getExpectedSignalForPhase(state.phase);
-  if (expectedSignal && sessionId && detectSignal(sessionId, expectedSignal)) {
+  if (expectedSignal && sessionId2 && detectSignal(sessionId2, expectedSignal)) {
     const nextPhase = getNextPhase(state.phase);
     if (nextPhase) {
       if (state.phase === "execution" && nextPhase === "qa") {
-        const result = transitionRalphToUltraQA(workingDir, sessionId);
+        const result = transitionRalphToUltraQA(workingDir, sessionId2);
         if (!result.success) {
           return generateContinuationPrompt(state, workingDir);
         }
       } else if (state.phase === "qa" && nextPhase === "validation") {
-        const result = transitionUltraQAToValidation(workingDir, sessionId);
+        const result = transitionUltraQAToValidation(workingDir, sessionId2);
         if (!result.success) {
-          return generateContinuationPrompt(state, workingDir, sessionId);
+          return generateContinuationPrompt(state, workingDir, sessionId2);
         }
       } else if (nextPhase === "complete") {
-        transitionToComplete(workingDir, sessionId);
+        transitionToComplete(workingDir, sessionId2);
         return {
           shouldBlock: false,
           message: `[AUTOPILOT COMPLETE] All phases finished successfully!`,
           phase: "complete"
         };
       } else {
-        transitionPhase(workingDir, nextPhase, sessionId);
+        transitionPhase(workingDir, nextPhase, sessionId2);
       }
-      const newState = readAutopilotState(workingDir, sessionId);
+      const newState = readAutopilotState(workingDir, sessionId2);
       if (newState) {
-        return generateContinuationPrompt(newState, workingDir, sessionId);
+        return generateContinuationPrompt(newState, workingDir, sessionId2);
       }
     }
   }
-  return generateContinuationPrompt(state, workingDir, sessionId);
+  return generateContinuationPrompt(state, workingDir, sessionId2);
 }
-function generateContinuationPrompt(state, directory, sessionId) {
+function generateContinuationPrompt(state, directory, sessionId2) {
   const toolError = readLastToolError(directory);
   const errorGuidance = getToolErrorRetryGuidance(toolError);
   state.iteration += 1;
-  writeAutopilotState(directory, state, sessionId);
+  writeAutopilotState(directory, state, sessionId2);
   const phasePrompt = getPhasePrompt(state.phase, {
     idea: state.originalIdea,
     specPath: state.expansion.spec_path || `.omc/autopilot/spec.md`,
@@ -16095,7 +16095,7 @@ IMPORTANT: When the phase is complete, output the appropriate signal:
     }
   };
 }
-function checkPipelineAutopilot(state, sessionId, directory) {
+function checkPipelineAutopilot(state, sessionId2, directory) {
   const tracking = readPipelineTracking(state);
   if (!tracking) return null;
   const currentAdapter = getCurrentStageAdapter(tracking);
@@ -16107,13 +16107,13 @@ function checkPipelineAutopilot(state, sessionId, directory) {
     };
   }
   const completionSignal = getCurrentCompletionSignal(tracking);
-  if (completionSignal && sessionId && detectPipelineSignal(sessionId, completionSignal)) {
+  if (completionSignal && sessionId2 && detectPipelineSignal(sessionId2, completionSignal)) {
     const { adapter: nextAdapter, phase: nextPhase } = advanceStage(
       directory,
-      sessionId
+      sessionId2
     );
     if (!nextAdapter || nextPhase === "complete") {
-      transitionPhase(directory, "complete", sessionId);
+      transitionPhase(directory, "complete", sessionId2);
       return {
         shouldBlock: false,
         message: "[AUTOPILOT COMPLETE] All pipeline stages finished successfully!",
@@ -16131,13 +16131,13 @@ function checkPipelineAutopilot(state, sessionId, directory) {
       currentAdapter.id,
       nextAdapter.id
     );
-    const updatedState = readAutopilotState(directory, sessionId);
+    const updatedState = readAutopilotState(directory, sessionId2);
     const updatedTracking2 = updatedState ? readPipelineTracking(updatedState) : null;
     const hudLine2 = updatedTracking2 ? formatPipelineHUD(updatedTracking2) : "";
     const context2 = {
       idea: state.originalIdea,
       directory: state.project_path || directory,
-      sessionId,
+      sessionId: sessionId2,
       specPath: state.expansion.spec_path || ".omc/autopilot/spec.md",
       planPath: state.planning.plan_path || resolveAutopilotPlanPath(),
       openQuestionsPath: resolveOpenQuestionsPlanPath(),
@@ -16164,19 +16164,19 @@ ${stagePrompt2}
       }
     };
   }
-  incrementStageIteration(directory, sessionId);
+  incrementStageIteration(directory, sessionId2);
   const toolError = readLastToolError(directory);
   const errorGuidance = getToolErrorRetryGuidance(toolError);
   state.iteration += 1;
-  writeAutopilotState(directory, state, sessionId);
+  writeAutopilotState(directory, state, sessionId2);
   const updatedTracking = readPipelineTracking(
-    readAutopilotState(directory, sessionId)
+    readAutopilotState(directory, sessionId2)
   );
   const hudLine = updatedTracking ? formatPipelineHUD(updatedTracking) : "";
   const context = {
     idea: state.originalIdea,
     directory: state.project_path || directory,
-    sessionId,
+    sessionId: sessionId2,
     specPath: state.expansion.spec_path || ".omc/autopilot/spec.md",
     planPath: state.planning.plan_path || resolveAutopilotPlanPath(),
     openQuestionsPath: resolveOpenQuestionsPlanPath(),
@@ -16213,12 +16213,12 @@ IMPORTANT: When this stage is complete, output the signal: ${currentAdapter.comp
     }
   };
 }
-function detectPipelineSignal(sessionId, signal) {
+function detectPipelineSignal(sessionId2, signal) {
   const claudeDir = getClaudeConfigDir();
   const possiblePaths = [
-    (0, import_path57.join)(claudeDir, "sessions", sessionId, "transcript.md"),
-    (0, import_path57.join)(claudeDir, "sessions", sessionId, "messages.json"),
-    (0, import_path57.join)(claudeDir, "transcripts", `${sessionId}.md`)
+    (0, import_path57.join)(claudeDir, "sessions", sessionId2, "transcript.md"),
+    (0, import_path57.join)(claudeDir, "sessions", sessionId2, "messages.json"),
+    (0, import_path57.join)(claudeDir, "transcripts", `${sessionId2}.md`)
   ];
   const escaped = signal.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const pattern = new RegExp(escaped, "i");
@@ -16375,11 +16375,11 @@ __export(persistent_mode_exports, {
   resetTodoContinuationAttempts: () => resetTodoContinuationAttempts,
   shouldSendIdleNotification: () => shouldSendIdleNotification
 });
-function isSessionCancelInProgress(directory, sessionId) {
-  if (!sessionId) return false;
+function isSessionCancelInProgress(directory, sessionId2) {
+  if (!sessionId2) return false;
   let cancelSignalPath;
   try {
-    cancelSignalPath = resolveSessionStatePath("cancel-signal", sessionId, directory);
+    cancelSignalPath = resolveSessionStatePath("cancel-signal", sessionId2, directory);
   } catch {
     return false;
   }
@@ -16471,8 +16471,8 @@ Do NOT skip this step. Do NOT move on without fixing the error.
 
 `;
 }
-function resetTodoContinuationAttempts(sessionId) {
-  todoContinuationAttempts.delete(sessionId);
+function resetTodoContinuationAttempts(sessionId2) {
+  todoContinuationAttempts.delete(sessionId2);
 }
 function getIdleNotificationCooldownSeconds() {
   for (const configPath of getGlobalOmcConfigCandidates("config.json")) {
@@ -16489,16 +16489,16 @@ function getIdleNotificationCooldownSeconds() {
   }
   return 60;
 }
-function getIdleNotificationCooldownPath(stateDir, sessionId) {
-  if (sessionId && /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,255}$/.test(sessionId)) {
-    return (0, import_path58.join)(stateDir, "sessions", sessionId, "idle-notif-cooldown.json");
+function getIdleNotificationCooldownPath(stateDir, sessionId2) {
+  if (sessionId2 && /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,255}$/.test(sessionId2)) {
+    return (0, import_path58.join)(stateDir, "sessions", sessionId2, "idle-notif-cooldown.json");
   }
   return (0, import_path58.join)(stateDir, "idle-notif-cooldown.json");
 }
-function shouldSendIdleNotification(stateDir, sessionId) {
+function shouldSendIdleNotification(stateDir, sessionId2) {
   const cooldownSecs = getIdleNotificationCooldownSeconds();
   if (cooldownSecs === 0) return true;
-  const cooldownPath = getIdleNotificationCooldownPath(stateDir, sessionId);
+  const cooldownPath = getIdleNotificationCooldownPath(stateDir, sessionId2);
   try {
     if (!(0, import_fs49.existsSync)(cooldownPath)) return true;
     const data = JSON.parse((0, import_fs49.readFileSync)(cooldownPath, "utf-8"));
@@ -16510,8 +16510,8 @@ function shouldSendIdleNotification(stateDir, sessionId) {
   }
   return true;
 }
-function recordIdleNotificationSent(stateDir, sessionId) {
-  const cooldownPath = getIdleNotificationCooldownPath(stateDir, sessionId);
+function recordIdleNotificationSent(stateDir, sessionId2) {
+  const cooldownPath = getIdleNotificationCooldownPath(stateDir, sessionId2);
   try {
     atomicWriteJsonSync(cooldownPath, { lastSentAt: (/* @__PURE__ */ new Date()).toISOString() });
   } catch {
@@ -16567,12 +16567,12 @@ function isAwaitingConfirmation2(state) {
     state && typeof state === "object" && state.awaiting_confirmation === true
   );
 }
-function checkArchitectApprovalInTranscript(sessionId) {
+function checkArchitectApprovalInTranscript(sessionId2) {
   const claudeDir = getClaudeConfigDir();
   const possiblePaths = [
-    (0, import_path58.join)(claudeDir, "sessions", sessionId, "transcript.md"),
-    (0, import_path58.join)(claudeDir, "sessions", sessionId, "messages.json"),
-    (0, import_path58.join)(claudeDir, "transcripts", `${sessionId}.md`)
+    (0, import_path58.join)(claudeDir, "sessions", sessionId2, "transcript.md"),
+    (0, import_path58.join)(claudeDir, "sessions", sessionId2, "messages.json"),
+    (0, import_path58.join)(claudeDir, "transcripts", `${sessionId2}.md`)
   ];
   for (const transcriptPath of possiblePaths) {
     if ((0, import_fs49.existsSync)(transcriptPath)) {
@@ -16588,12 +16588,12 @@ function checkArchitectApprovalInTranscript(sessionId) {
   }
   return false;
 }
-function checkArchitectRejectionInTranscript(sessionId) {
+function checkArchitectRejectionInTranscript(sessionId2) {
   const claudeDir = getClaudeConfigDir();
   const possiblePaths = [
-    (0, import_path58.join)(claudeDir, "sessions", sessionId, "transcript.md"),
-    (0, import_path58.join)(claudeDir, "sessions", sessionId, "messages.json"),
-    (0, import_path58.join)(claudeDir, "transcripts", `${sessionId}.md`)
+    (0, import_path58.join)(claudeDir, "sessions", sessionId2, "transcript.md"),
+    (0, import_path58.join)(claudeDir, "sessions", sessionId2, "messages.json"),
+    (0, import_path58.join)(claudeDir, "transcripts", `${sessionId2}.md`)
   ];
   for (const transcriptPath of possiblePaths) {
     if ((0, import_fs49.existsSync)(transcriptPath)) {
@@ -16610,13 +16610,13 @@ function checkArchitectRejectionInTranscript(sessionId) {
   }
   return { rejected: false, feedback: "" };
 }
-async function checkRalphLoop(sessionId, directory, cancelInProgress) {
+async function checkRalphLoop(sessionId2, directory, cancelInProgress) {
   const workingDir = resolveToWorktreeRoot(directory);
-  const state = readRalphState(workingDir, sessionId);
+  const state = readRalphState(workingDir, sessionId2);
   if (!state || !state.active) {
     return null;
   }
-  if (state.session_id !== sessionId) {
+  if (state.session_id !== sessionId2) {
     return null;
   }
   if (isAwaitingConfirmation2(state)) {
@@ -16630,29 +16630,29 @@ async function checkRalphLoop(sessionId, directory, cancelInProgress) {
     };
   }
   if (state.linked_ultrawork) {
-    const ultraworkState = readUltraworkState(workingDir, sessionId);
+    const ultraworkState = readUltraworkState(workingDir, sessionId2);
     if (!ultraworkState?.active) {
       const now = (/* @__PURE__ */ new Date()).toISOString();
       const restoredState = {
         active: true,
         started_at: state.started_at || now,
         original_prompt: state.prompt || "Ralph loop task",
-        session_id: sessionId,
+        session_id: sessionId2,
         project_path: workingDir,
         reinforcement_count: 0,
         last_checked_at: now,
         linked_to_ralph: true
       };
-      writeUltraworkState(restoredState, workingDir, sessionId);
+      writeUltraworkState(restoredState, workingDir, sessionId2);
     }
   }
-  const teamState = readTeamPipelineState(workingDir, sessionId);
+  const teamState = readTeamPipelineState(workingDir, sessionId2);
   if (teamState && teamState.active !== void 0) {
     const teamPhase = teamState.phase;
     if (teamPhase === "complete") {
-      clearRalphState(workingDir, sessionId);
-      clearVerificationState(workingDir, sessionId);
-      deactivateUltrawork(workingDir, sessionId);
+      clearRalphState(workingDir, sessionId2);
+      clearVerificationState(workingDir, sessionId2);
+      deactivateUltrawork(workingDir, sessionId2);
       return {
         shouldBlock: false,
         message: `[RALPH LOOP COMPLETE - TEAM] Team pipeline completed successfully. Ralph loop ending after ${state.iteration} iteration(s).`,
@@ -16660,9 +16660,9 @@ async function checkRalphLoop(sessionId, directory, cancelInProgress) {
       };
     }
     if (teamPhase === "failed") {
-      clearRalphState(workingDir, sessionId);
-      clearVerificationState(workingDir, sessionId);
-      deactivateUltrawork(workingDir, sessionId);
+      clearRalphState(workingDir, sessionId2);
+      clearVerificationState(workingDir, sessionId2);
+      deactivateUltrawork(workingDir, sessionId2);
       return {
         shouldBlock: false,
         message: `[RALPH LOOP STOPPED - TEAM FAILED] Team pipeline failed. Ralph loop ending after ${state.iteration} iteration(s).`,
@@ -16670,9 +16670,9 @@ async function checkRalphLoop(sessionId, directory, cancelInProgress) {
       };
     }
     if (teamPhase === "cancelled") {
-      clearRalphState(workingDir, sessionId);
-      clearVerificationState(workingDir, sessionId);
-      deactivateUltrawork(workingDir, sessionId);
+      clearRalphState(workingDir, sessionId2);
+      clearVerificationState(workingDir, sessionId2);
+      deactivateUltrawork(workingDir, sessionId2);
       return {
         shouldBlock: false,
         message: `[RALPH LOOP CANCELLED - TEAM] Team pipeline was cancelled. Ralph loop ending after ${state.iteration} iteration(s).`,
@@ -16680,13 +16680,13 @@ async function checkRalphLoop(sessionId, directory, cancelInProgress) {
       };
     }
   }
-  const verificationState = readVerificationState(workingDir, sessionId);
+  const verificationState = readVerificationState(workingDir, sessionId2);
   if (verificationState?.pending) {
-    if (sessionId) {
-      if (checkArchitectApprovalInTranscript(sessionId)) {
-        clearVerificationState(workingDir, sessionId);
-        clearRalphState(workingDir, sessionId);
-        deactivateUltrawork(workingDir, sessionId);
+    if (sessionId2) {
+      if (checkArchitectApprovalInTranscript(sessionId2)) {
+        clearVerificationState(workingDir, sessionId2);
+        clearRalphState(workingDir, sessionId2);
+        deactivateUltrawork(workingDir, sessionId2);
         const criticLabel = verificationState.critic_mode === "codex" ? "Codex critic" : verificationState.critic_mode === "critic" ? "Critic" : "Architect";
         return {
           shouldBlock: false,
@@ -16694,10 +16694,10 @@ async function checkRalphLoop(sessionId, directory, cancelInProgress) {
           mode: "none"
         };
       }
-      const rejection = checkArchitectRejectionInTranscript(sessionId);
+      const rejection = checkArchitectRejectionInTranscript(sessionId2);
       if (rejection.rejected) {
-        recordArchitectFeedback(workingDir, false, rejection.feedback, sessionId);
-        const updatedVerification = readVerificationState(workingDir, sessionId);
+        recordArchitectFeedback(workingDir, false, rejection.feedback, sessionId2);
+        const updatedVerification = readVerificationState(workingDir, sessionId2);
         if (updatedVerification) {
           const continuationPrompt2 = getArchitectRejectionContinuationPrompt(updatedVerification);
           return {
@@ -16732,7 +16732,7 @@ async function checkRalphLoop(sessionId, directory, cancelInProgress) {
       `All ${prdStatus.status?.total || 0} PRD stories are marked passes: true.`,
       state.prompt,
       state.critic_mode,
-      sessionId
+      sessionId2
     );
     return {
       shouldBlock: true,
@@ -16746,11 +16746,11 @@ async function checkRalphLoop(sessionId, directory, cancelInProgress) {
   }
   if (state.iteration >= state.max_iterations) {
     state.max_iterations += 10;
-    writeRalphState(workingDir, state, sessionId);
+    writeRalphState(workingDir, state, sessionId2);
   }
   const toolError = readLastToolError(workingDir);
   const errorGuidance = getToolErrorRetryGuidance(toolError);
-  const newState = incrementRalphIteration(workingDir, sessionId);
+  const newState = incrementRalphIteration(workingDir, sessionId2);
   if (!newState) {
     return null;
   }
@@ -16787,8 +16787,8 @@ ${newState.prompt ? `Original task: ${newState.prompt}` : ""}
     }
   };
 }
-function readStopBreaker(directory, name, sessionId, ttlMs) {
-  const stateDir = sessionId ? (0, import_path58.join)(getOmcRoot(directory), "state", "sessions", sessionId) : (0, import_path58.join)(getOmcRoot(directory), "state");
+function readStopBreaker(directory, name, sessionId2, ttlMs) {
+  const stateDir = sessionId2 ? (0, import_path58.join)(getOmcRoot(directory), "state", "sessions", sessionId2) : (0, import_path58.join)(getOmcRoot(directory), "state");
   const breakerPath = (0, import_path58.join)(stateDir, `${name}-stop-breaker.json`);
   try {
     if (!(0, import_fs49.existsSync)(breakerPath)) return 0;
@@ -16805,8 +16805,8 @@ function readStopBreaker(directory, name, sessionId, ttlMs) {
     return 0;
   }
 }
-function writeStopBreaker(directory, name, count, sessionId) {
-  const stateDir = sessionId ? (0, import_path58.join)(getOmcRoot(directory), "state", "sessions", sessionId) : (0, import_path58.join)(getOmcRoot(directory), "state");
+function writeStopBreaker(directory, name, count, sessionId2) {
+  const stateDir = sessionId2 ? (0, import_path58.join)(getOmcRoot(directory), "state", "sessions", sessionId2) : (0, import_path58.join)(getOmcRoot(directory), "state");
   try {
     (0, import_fs49.mkdirSync)(stateDir, { recursive: true });
     const breakerPath = (0, import_path58.join)(stateDir, `${name}-stop-breaker.json`);
@@ -16815,14 +16815,14 @@ function writeStopBreaker(directory, name, count, sessionId) {
   } catch {
   }
 }
-async function checkTeamPipeline(sessionId, directory, cancelInProgress) {
+async function checkTeamPipeline(sessionId2, directory, cancelInProgress) {
   const workingDir = resolveToWorktreeRoot(directory);
-  const teamState = readTeamPipelineState(workingDir, sessionId);
+  const teamState = readTeamPipelineState(workingDir, sessionId2);
   if (!teamState) {
     return null;
   }
   if (!teamState.active) {
-    writeStopBreaker(workingDir, "team-pipeline", 0, sessionId);
+    writeStopBreaker(workingDir, "team-pipeline", 0, sessionId2);
     return {
       shouldBlock: false,
       message: "",
@@ -16842,7 +16842,7 @@ async function checkTeamPipeline(sessionId, directory, cancelInProgress) {
   }
   const phase = rawPhase.trim().toLowerCase();
   if (phase === "complete" || phase === "completed" || phase === "failed" || phase === "cancelled" || phase === "canceled" || phase === "cancel") {
-    writeStopBreaker(workingDir, "team-pipeline", 0, sessionId);
+    writeStopBreaker(workingDir, "team-pipeline", 0, sessionId2);
     return {
       shouldBlock: false,
       message: "",
@@ -16856,7 +16856,7 @@ async function checkTeamPipeline(sessionId, directory, cancelInProgress) {
   const rawStatus = teamState.status;
   const status = typeof rawStatus === "string" ? rawStatus.trim().toLowerCase() : null;
   if (status === "cancelled" || status === "canceled" || status === "cancel" || status === "failed" || status === "complete" || status === "completed") {
-    writeStopBreaker(workingDir, "team-pipeline", 0, sessionId);
+    writeStopBreaker(workingDir, "team-pipeline", 0, sessionId2);
     return {
       shouldBlock: false,
       message: "",
@@ -16864,23 +16864,23 @@ async function checkTeamPipeline(sessionId, directory, cancelInProgress) {
     };
   }
   if (teamState.cancel?.requested) {
-    writeStopBreaker(workingDir, "team-pipeline", 0, sessionId);
+    writeStopBreaker(workingDir, "team-pipeline", 0, sessionId2);
     return {
       shouldBlock: false,
       message: "",
       mode: "team"
     };
   }
-  const breakerCount = readStopBreaker(workingDir, "team-pipeline", sessionId, TEAM_PIPELINE_STOP_BLOCKER_TTL_MS) + 1;
+  const breakerCount = readStopBreaker(workingDir, "team-pipeline", sessionId2, TEAM_PIPELINE_STOP_BLOCKER_TTL_MS) + 1;
   if (breakerCount > TEAM_PIPELINE_STOP_BLOCKER_MAX) {
-    writeStopBreaker(workingDir, "team-pipeline", 0, sessionId);
+    writeStopBreaker(workingDir, "team-pipeline", 0, sessionId2);
     return {
       shouldBlock: false,
       message: `[TEAM PIPELINE CIRCUIT BREAKER] Stop enforcement exceeded ${TEAM_PIPELINE_STOP_BLOCKER_MAX} reinforcements. Allowing stop to prevent infinite blocking.`,
       mode: "team"
     };
   }
-  writeStopBreaker(workingDir, "team-pipeline", breakerCount, sessionId);
+  writeStopBreaker(workingDir, "team-pipeline", breakerCount, sessionId2);
   return {
     shouldBlock: true,
     message: `<team-pipeline-continuation>
@@ -16904,13 +16904,13 @@ When done, run \`/oh-my-claudecode:cancel\` to cleanly exit.
     }
   };
 }
-async function checkRalplan(sessionId, directory, cancelInProgress) {
+async function checkRalplan(sessionId2, directory, cancelInProgress) {
   const workingDir = resolveToWorktreeRoot(directory);
-  const state = readModeState("ralplan", workingDir, sessionId);
+  const state = readModeState("ralplan", workingDir, sessionId2);
   if (!state || !state.active) {
     return null;
   }
-  if (sessionId && state.session_id && state.session_id !== sessionId) {
+  if (sessionId2 && state.session_id && state.session_id !== sessionId2) {
     return null;
   }
   if (isAwaitingConfirmation2(state)) {
@@ -16920,7 +16920,7 @@ async function checkRalplan(sessionId, directory, cancelInProgress) {
   if (typeof currentPhase === "string") {
     const terminal = ["complete", "completed", "failed", "cancelled", "done"];
     if (terminal.includes(currentPhase.toLowerCase())) {
-      writeStopBreaker(workingDir, "ralplan", 0, sessionId);
+      writeStopBreaker(workingDir, "ralplan", 0, sessionId2);
       return { shouldBlock: false, message: "", mode: "ralplan" };
     }
   }
@@ -16935,23 +16935,23 @@ async function checkRalplan(sessionId, directory, cancelInProgress) {
   const activeAgentStateUpdatedAt = activeAgents.lastUpdatedAt ? new Date(activeAgents.lastUpdatedAt).getTime() : NaN;
   const hasFreshActiveAgentState = Number.isFinite(activeAgentStateUpdatedAt) && Date.now() - activeAgentStateUpdatedAt <= RALPLAN_ACTIVE_AGENT_RECENCY_WINDOW_MS;
   if (activeAgents.count > 0 && hasFreshActiveAgentState) {
-    writeStopBreaker(workingDir, "ralplan", 0, sessionId);
+    writeStopBreaker(workingDir, "ralplan", 0, sessionId2);
     return {
       shouldBlock: false,
       message: "",
       mode: "ralplan"
     };
   }
-  const breakerCount = readStopBreaker(workingDir, "ralplan", sessionId, RALPLAN_STOP_BLOCKER_TTL_MS) + 1;
+  const breakerCount = readStopBreaker(workingDir, "ralplan", sessionId2, RALPLAN_STOP_BLOCKER_TTL_MS) + 1;
   if (breakerCount > RALPLAN_STOP_BLOCKER_MAX) {
-    writeStopBreaker(workingDir, "ralplan", 0, sessionId);
+    writeStopBreaker(workingDir, "ralplan", 0, sessionId2);
     return {
       shouldBlock: false,
       message: `[RALPLAN CIRCUIT BREAKER] Stop enforcement exceeded ${RALPLAN_STOP_BLOCKER_MAX} reinforcements. Allowing stop to prevent infinite blocking.`,
       mode: "ralplan"
     };
   }
-  writeStopBreaker(workingDir, "ralplan", breakerCount, sessionId);
+  writeStopBreaker(workingDir, "ralplan", breakerCount, sessionId2);
   return {
     shouldBlock: true,
     message: `<ralplan-continuation>
@@ -16970,13 +16970,13 @@ When done, run \`/oh-my-claudecode:cancel\` to cleanly exit.
     mode: "ralplan"
   };
 }
-async function checkUltrawork(sessionId, directory, _hasIncompleteTodos, cancelInProgress) {
+async function checkUltrawork(sessionId2, directory, _hasIncompleteTodos, cancelInProgress) {
   const workingDir = resolveToWorktreeRoot(directory);
-  const state = readUltraworkState(workingDir, sessionId);
+  const state = readUltraworkState(workingDir, sessionId2);
   if (!state || !state.active) {
     return null;
   }
-  if (state.session_id !== sessionId) {
+  if (state.session_id !== sessionId2) {
     return null;
   }
   if (isAwaitingConfirmation2(state)) {
@@ -16989,7 +16989,7 @@ async function checkUltrawork(sessionId, directory, _hasIncompleteTodos, cancelI
       mode: "none"
     };
   }
-  const newState = incrementReinforcement(workingDir, sessionId);
+  const newState = incrementReinforcement(workingDir, sessionId2);
   if (!newState) {
     return null;
   }
@@ -17003,7 +17003,7 @@ async function checkUltrawork(sessionId, directory, _hasIncompleteTodos, cancelI
     }
   };
 }
-async function checkPersistentModes(sessionId, directory, stopContext) {
+async function checkPersistentModes(sessionId2, directory, stopContext) {
   const workingDir = resolveToWorktreeRoot(directory);
   if (isCriticalContextStop(stopContext)) {
     return {
@@ -17019,7 +17019,7 @@ async function checkPersistentModes(sessionId, directory, stopContext) {
       mode: "none"
     };
   }
-  const cancelInProgress = isSessionCancelInProgress(workingDir, sessionId);
+  const cancelInProgress = isSessionCancelInProgress(workingDir, sessionId2);
   if (cancelInProgress) {
     return {
       shouldBlock: false,
@@ -17048,14 +17048,14 @@ async function checkPersistentModes(sessionId, directory, stopContext) {
       mode: "none"
     };
   }
-  const todoResult = await checkIncompleteTodos(sessionId, workingDir, stopContext);
+  const todoResult = await checkIncompleteTodos(sessionId2, workingDir, stopContext);
   const hasIncompleteTodos = todoResult.count > 0;
-  const ralphResult = await checkRalphLoop(sessionId, workingDir, cancelInProgress);
+  const ralphResult = await checkRalphLoop(sessionId2, workingDir, cancelInProgress);
   if (ralphResult) {
     return ralphResult;
   }
-  if (isAutopilotActive(workingDir, sessionId)) {
-    const autopilotResult = await checkAutopilot(sessionId, workingDir);
+  if (isAutopilotActive(workingDir, sessionId2)) {
+    const autopilotResult = await checkAutopilot(sessionId2, workingDir);
     if (autopilotResult?.shouldBlock) {
       return {
         shouldBlock: true,
@@ -17072,21 +17072,21 @@ async function checkPersistentModes(sessionId, directory, stopContext) {
       };
     }
   }
-  const teamResult = await checkTeamPipeline(sessionId, workingDir, cancelInProgress);
+  const teamResult = await checkTeamPipeline(sessionId2, workingDir, cancelInProgress);
   if (teamResult) {
     return teamResult;
   }
-  const ralplanResult = await checkRalplan(sessionId, workingDir, cancelInProgress);
+  const ralplanResult = await checkRalplan(sessionId2, workingDir, cancelInProgress);
   if (ralplanResult) {
     return ralplanResult;
   }
-  const ultraworkResult = await checkUltrawork(sessionId, workingDir, hasIncompleteTodos, cancelInProgress);
+  const ultraworkResult = await checkUltrawork(sessionId2, workingDir, hasIncompleteTodos, cancelInProgress);
   if (ultraworkResult?.shouldBlock) {
     return ultraworkResult;
   }
   try {
     const { checkSkillActiveState: checkSkillActiveState2 } = await Promise.resolve().then(() => (init_skill_state(), skill_state_exports));
-    const skillResult = checkSkillActiveState2(workingDir, sessionId);
+    const skillResult = checkSkillActiveState2(workingDir, sessionId2);
     if (skillResult.shouldBlock) {
       return {
         shouldBlock: true,
@@ -20129,11 +20129,11 @@ function lookupByMessageId(platform, messageId) {
   const mappings = loadAllMappings();
   return mappings.findLast((m) => m.platform === platform && m.messageId === messageId) ?? null;
 }
-function removeSession(sessionId) {
+function removeSession(sessionId2) {
   withRegistryLock(
     () => {
       const mappings = readAllMappingsUnsafe();
-      const filtered = mappings.filter((m) => m.sessionId !== sessionId);
+      const filtered = mappings.filter((m) => m.sessionId !== sessionId2);
       if (filtered.length === mappings.length) {
         return;
       }
@@ -22025,16 +22025,16 @@ function prefixMessageWithTags(message, tags) {
   return `${tags.join(" ")}
 ${message}`;
 }
-function interpolatePath(pathTemplate, sessionId) {
+function interpolatePath(pathTemplate, sessionId2) {
   const now = /* @__PURE__ */ new Date();
   const date3 = now.toISOString().split("T")[0];
   const time3 = now.toISOString().split("T")[1].split(".")[0].replace(/:/g, "-");
-  const safeSessionId = sessionId.replace(/[/\\..]/g, "_");
+  const safeSessionId = sessionId2.replace(/[/\\..]/g, "_");
   return (0, import_path69.normalize)(pathTemplate.replace(/~/g, (0, import_os11.homedir)()).replace(/\{session_id\}/g, safeSessionId).replace(/\{date\}/g, date3).replace(/\{time\}/g, time3));
 }
-async function writeToFile(config2, content, sessionId) {
+async function writeToFile(config2, content, sessionId2) {
   try {
-    const resolvedPath = interpolatePath(config2.path, sessionId);
+    const resolvedPath = interpolatePath(config2.path, sessionId2);
     const dir = (0, import_path69.dirname)(resolvedPath);
     (0, import_fs55.mkdirSync)(dir, { recursive: true });
     (0, import_fs55.writeFileSync)(resolvedPath, content, { encoding: "utf-8", mode: 384 });
@@ -22700,10 +22700,10 @@ async function teamCreateTask(teamName, task, cwd2) {
     const result = await withLock(lockDir, async () => {
       const cfg = await teamReadConfig(teamName, cwd2);
       if (!cfg) throw new Error(`Team ${teamName} not found`);
-      const nextId = String(cfg.next_task_id ?? 1);
+      const nextId2 = String(cfg.next_task_id ?? 1);
       const created = {
         ...task,
-        id: nextId,
+        id: nextId2,
         status: task.status ?? "pending",
         depends_on: task.depends_on ?? task.blocked_by ?? [],
         version: 1,
@@ -22711,8 +22711,8 @@ async function teamCreateTask(teamName, task, cwd2) {
       };
       const taskPath2 = absPath(cwd2, TeamPaths.tasks(teamName));
       await (0, import_promises7.mkdir)(taskPath2, { recursive: true });
-      await writeAtomic((0, import_node_path5.join)(taskPath2, `task-${nextId}.json`), JSON.stringify(created, null, 2));
-      cfg.next_task_id = Number(nextId) + 1;
+      await writeAtomic((0, import_node_path5.join)(taskPath2, `task-${nextId2}.json`), JSON.stringify(created, null, 2));
+      cfg.next_task_id = Number(nextId2) + 1;
       await writeAtomic(absPath(cwd2, TeamPaths.config(teamName)), JSON.stringify(cfg, null, 2));
       return created;
     });
@@ -27146,7 +27146,7 @@ function getModesUsed(directory) {
   }
   return modes;
 }
-function getSessionStartTime2(directory, sessionId) {
+function getSessionStartTime2(directory, sessionId2) {
   const stateDir = path16.join(getOmcRoot(directory), "state");
   if (!fs12.existsSync(stateDir)) {
     return void 0;
@@ -27168,7 +27168,7 @@ function getSessionStartTime2(directory, sessionId) {
       if (!Number.isFinite(ts)) {
         continue;
       }
-      if (sessionId && state.session_id === sessionId) {
+      if (sessionId2 && state.session_id === sessionId2) {
         if (ts < matchedEpoch) {
           matchedEpoch = ts;
           matchedStartTime = state.started_at;
@@ -27346,9 +27346,9 @@ async function extractPythonReplSessionIdsFromTranscript(transcriptPath) {
         if (toolUse.type !== "tool_use" || !toolUse.name || !PYTHON_REPL_TOOL_NAMES.has(toolUse.name)) {
           continue;
         }
-        const sessionId = toolUse.input?.researchSessionID;
-        if (typeof sessionId === "string" && sessionId.trim().length > 0) {
-          sessionIds.add(sessionId.trim());
+        const sessionId2 = toolUse.input?.researchSessionID;
+        if (typeof sessionId2 === "string" && sessionId2.trim().length > 0) {
+          sessionIds.add(sessionId2.trim());
         }
       }
     }
@@ -27358,7 +27358,7 @@ async function extractPythonReplSessionIdsFromTranscript(transcriptPath) {
   }
   return [...sessionIds];
 }
-function cleanupModeStates(directory, sessionId) {
+function cleanupModeStates(directory, sessionId2) {
   let filesRemoved = 0;
   const modesCleaned = [];
   const stateDir = path16.join(getOmcRoot(directory), "state");
@@ -27367,17 +27367,17 @@ function cleanupModeStates(directory, sessionId) {
   }
   for (const { file, mode } of SESSION_END_MODE_STATE_FILES) {
     const localPath = path16.join(stateDir, file);
-    const sessionPath = sessionId ? resolveSessionStatePath(mode, sessionId, directory) : void 0;
+    const sessionPath = sessionId2 ? resolveSessionStatePath(mode, sessionId2, directory) : void 0;
     try {
       if (file.endsWith(".json")) {
-        const sessionState = sessionId ? readModeState(mode, directory, sessionId) : null;
+        const sessionState = sessionId2 ? readModeState(mode, directory, sessionId2) : null;
         let shouldCleanup = sessionState?.active === true;
         if (!shouldCleanup && fs12.existsSync(localPath)) {
           const content = fs12.readFileSync(localPath, "utf-8");
           const state = JSON.parse(content);
           if (state.active === true) {
             const stateSessionId = state.session_id;
-            if (!sessionId || !stateSessionId || stateSessionId === sessionId) {
+            if (!sessionId2 || !stateSessionId || stateSessionId === sessionId2) {
               shouldCleanup = true;
             }
           }
@@ -27385,7 +27385,7 @@ function cleanupModeStates(directory, sessionId) {
         if (shouldCleanup) {
           const hadLocalPath = fs12.existsSync(localPath);
           const hadSessionPath = Boolean(sessionPath && fs12.existsSync(sessionPath));
-          if (clearModeStateFile(mode, directory, sessionId)) {
+          if (clearModeStateFile(mode, directory, sessionId2)) {
             if (hadLocalPath && !fs12.existsSync(localPath)) {
               filesRemoved++;
             }
@@ -27409,7 +27409,7 @@ function cleanupModeStates(directory, sessionId) {
   }
   return { filesRemoved, modesCleaned };
 }
-function cleanupMissionState(directory, sessionId) {
+function cleanupMissionState(directory, sessionId2) {
   const missionStatePath = path16.join(getOmcRoot(directory), "state", "mission-state.json");
   if (!fs12.existsSync(missionStatePath)) {
     return 0;
@@ -27423,9 +27423,9 @@ function cleanupMissionState(directory, sessionId) {
     const before = parsed.missions.length;
     parsed.missions = parsed.missions.filter((mission) => {
       if (mission.source !== "session") return true;
-      if (sessionId) {
+      if (sessionId2) {
         const missionId = typeof mission.id === "string" ? mission.id : "";
-        return !missionId.includes(sessionId);
+        return !missionId.includes(sessionId2);
       }
       return false;
     });
@@ -27444,9 +27444,9 @@ function extractTeamNameFromState(state) {
   const rawTeamName = state.team_name ?? state.teamName;
   return typeof rawTeamName === "string" && rawTeamName.trim() !== "" ? rawTeamName.trim() : null;
 }
-async function findSessionOwnedTeams(directory, sessionId) {
+async function findSessionOwnedTeams(directory, sessionId2) {
   const teamNames = /* @__PURE__ */ new Set();
-  const teamState = readModeState("team", directory, sessionId);
+  const teamState = readModeState("team", directory, sessionId2);
   const stateTeamName = extractTeamNameFromState(teamState);
   if (stateTeamName) {
     teamNames.add(stateTeamName);
@@ -27463,7 +27463,7 @@ async function findSessionOwnedTeams(directory, sessionId) {
       const teamName = entry.name;
       try {
         const manifest = await teamReadManifest2(teamName, directory);
-        if (manifest?.leader.session_id === sessionId) {
+        if (manifest?.leader.session_id === sessionId2) {
           teamNames.add(teamName);
         }
       } catch {
@@ -27473,11 +27473,11 @@ async function findSessionOwnedTeams(directory, sessionId) {
   }
   return [...teamNames];
 }
-async function cleanupSessionOwnedTeams(directory, sessionId) {
+async function cleanupSessionOwnedTeams(directory, sessionId2) {
   const attempted = [];
   const cleaned = [];
   const failed = [];
-  const teamNames = await findSessionOwnedTeams(directory, sessionId);
+  const teamNames = await findSessionOwnedTeams(directory, sessionId2);
   if (teamNames.length === 0) {
     return { attempted, cleaned, failed };
   }
@@ -28242,7 +28242,7 @@ function getBeadsContextConfig() {
     useMcp: config2.taskToolConfig?.useMcp ?? false
   };
 }
-function registerBeadsContext(sessionId) {
+function registerBeadsContext(sessionId2) {
   const config2 = getBeadsContextConfig();
   if (config2.taskTool === "builtin" || !config2.injectInstructions) {
     return false;
@@ -28251,7 +28251,7 @@ function registerBeadsContext(sessionId) {
     return false;
   }
   const instructions = getBeadsInstructions(config2.taskTool);
-  contextCollector.register(sessionId, {
+  contextCollector.register(sessionId2, {
     id: "beads-instructions",
     source: "beads",
     content: instructions,
@@ -35600,10 +35600,10 @@ function isStateFileStale(filePath) {
     return true;
   }
 }
-function resolveStatePath2(directory, filename, sessionId) {
+function resolveStatePath2(directory, filename, sessionId2) {
   const omcRoot = getOmcRoot(directory);
-  if (sessionId) {
-    const sessionPath = (0, import_path116.join)(omcRoot, "state", "sessions", sessionId, filename);
+  if (sessionId2) {
+    const sessionPath = (0, import_path116.join)(omcRoot, "state", "sessions", sessionId2, filename);
     return (0, import_fs99.existsSync)(sessionPath) ? sessionPath : null;
   }
   let bestPath = null;
@@ -35654,8 +35654,8 @@ function resolveStatePath2(directory, filename, sessionId) {
   }
   return bestPath;
 }
-function readRalphStateForHud(directory, sessionId) {
-  const stateFile = resolveStatePath2(directory, "ralph-state.json", sessionId);
+function readRalphStateForHud(directory, sessionId2) {
+  const stateFile = resolveStatePath2(directory, "ralph-state.json", sessionId2);
   if (!stateFile) {
     return null;
   }
@@ -35679,8 +35679,8 @@ function readRalphStateForHud(directory, sessionId) {
     return null;
   }
 }
-function readUltraworkStateForHud(directory, sessionId) {
-  const localFile = resolveStatePath2(directory, "ultrawork-state.json", sessionId);
+function readUltraworkStateForHud(directory, sessionId2) {
+  const localFile = resolveStatePath2(directory, "ultrawork-state.json", sessionId2);
   if (!localFile || isStateFileStale(localFile)) {
     return null;
   }
@@ -35725,8 +35725,8 @@ function readPrdStateForHud(directory) {
     return null;
   }
 }
-function readAutopilotStateForHud(directory, sessionId) {
-  const stateFile = resolveStatePath2(directory, "autopilot-state.json", sessionId);
+function readAutopilotStateForHud(directory, sessionId2) {
+  const stateFile = resolveStatePath2(directory, "autopilot-state.json", sessionId2);
   if (!stateFile) {
     return null;
   }
@@ -37481,8 +37481,8 @@ function extractSessionIdFromPath(transcriptPath) {
   const match = transcriptPath.match(/([0-9a-f-]{36})(?:\.jsonl)?$/i);
   return match ? match[1] : null;
 }
-function readSessionSummary(stateDir, sessionId) {
-  const statePath = (0, import_path119.join)(stateDir, `session-summary-${sessionId}.json`);
+function readSessionSummary(stateDir, sessionId2) {
+  const statePath = (0, import_path119.join)(stateDir, `session-summary-${sessionId2}.json`);
   if (!(0, import_fs102.existsSync)(statePath)) return null;
   try {
     return JSON.parse((0, import_fs102.readFileSync)(statePath, "utf-8"));
@@ -37497,7 +37497,7 @@ function _resetSummarySpawnTimestamp() {
 function _getSummaryProcessPid() {
   return summaryProcessPid;
 }
-function spawnSessionSummaryScript(transcriptPath, stateDir, sessionId) {
+function spawnSessionSummaryScript(transcriptPath, stateDir, sessionId2) {
   if (summaryProcessPid !== null) {
     try {
       process.kill(summaryProcessPid, 0);
@@ -37528,7 +37528,7 @@ function spawnSessionSummaryScript(transcriptPath, stateDir, sessionId) {
   try {
     const child = (0, import_child_process44.spawn)(
       "node",
-      [scriptPath, transcriptPath, stateDir, sessionId],
+      [scriptPath, transcriptPath, stateDir, sessionId2],
       {
         stdio: "ignore",
         detached: true,
@@ -56597,17 +56597,17 @@ var Protocol = class {
       this._taskProgressTokens.delete(taskId);
     }
   }
-  async _enqueueTaskMessage(taskId, message, sessionId) {
+  async _enqueueTaskMessage(taskId, message, sessionId2) {
     var _a;
     if (!this._taskStore || !this._taskMessageQueue) {
       throw new Error("Cannot enqueue task message: taskStore and taskMessageQueue are not configured");
     }
     const maxQueueSize = (_a = this._options) === null || _a === void 0 ? void 0 : _a.maxTaskQueueSize;
-    await this._taskMessageQueue.enqueue(taskId, message, sessionId, maxQueueSize);
+    await this._taskMessageQueue.enqueue(taskId, message, sessionId2, maxQueueSize);
   }
-  async _clearTaskQueue(taskId, sessionId) {
+  async _clearTaskQueue(taskId, sessionId2) {
     if (this._taskMessageQueue) {
-      const messages = await this._taskMessageQueue.dequeueAll(taskId, sessionId);
+      const messages = await this._taskMessageQueue.dequeueAll(taskId, sessionId2);
       for (const message of messages) {
         if (message.type === "request" && isJSONRPCRequest(message.message)) {
           const requestId = message.message.id;
@@ -56644,7 +56644,7 @@ var Protocol = class {
       }, { once: true });
     });
   }
-  requestTaskStore(request, sessionId) {
+  requestTaskStore(request, sessionId2) {
     const taskStore = this._taskStore;
     if (!taskStore) {
       throw new Error("No task store configured");
@@ -56657,18 +56657,18 @@ var Protocol = class {
         return await taskStore.createTask(taskParams, request.id, {
           method: request.method,
           params: request.params
-        }, sessionId);
+        }, sessionId2);
       },
       getTask: async (taskId) => {
-        const task = await taskStore.getTask(taskId, sessionId);
+        const task = await taskStore.getTask(taskId, sessionId2);
         if (!task) {
           throw new McpError(ErrorCode.InvalidParams, "Failed to retrieve task: Task not found");
         }
         return task;
       },
       storeTaskResult: async (taskId, status, result) => {
-        await taskStore.storeTaskResult(taskId, status, result, sessionId);
-        const task = await taskStore.getTask(taskId, sessionId);
+        await taskStore.storeTaskResult(taskId, status, result, sessionId2);
+        const task = await taskStore.getTask(taskId, sessionId2);
         if (task) {
           const notification = TaskStatusNotificationSchema.parse({
             method: "notifications/tasks/status",
@@ -56681,18 +56681,18 @@ var Protocol = class {
         }
       },
       getTaskResult: (taskId) => {
-        return taskStore.getTaskResult(taskId, sessionId);
+        return taskStore.getTaskResult(taskId, sessionId2);
       },
       updateTaskStatus: async (taskId, status, statusMessage) => {
-        const task = await taskStore.getTask(taskId, sessionId);
+        const task = await taskStore.getTask(taskId, sessionId2);
         if (!task) {
           throw new McpError(ErrorCode.InvalidParams, `Task "${taskId}" not found - it may have been cleaned up`);
         }
         if (isTerminal(task.status)) {
           throw new McpError(ErrorCode.InvalidParams, `Cannot update task "${taskId}" from terminal status "${task.status}" to "${status}". Terminal states (completed, failed, cancelled) cannot transition to other states.`);
         }
-        await taskStore.updateTaskStatus(taskId, status, statusMessage, sessionId);
-        const updatedTask = await taskStore.getTask(taskId, sessionId);
+        await taskStore.updateTaskStatus(taskId, status, statusMessage, sessionId2);
+        const updatedTask = await taskStore.getTask(taskId, sessionId2);
         if (updatedTask) {
           const notification = TaskStatusNotificationSchema.parse({
             method: "notifications/tasks/status",
@@ -56705,7 +56705,7 @@ var Protocol = class {
         }
       },
       listTasks: (cursor) => {
-        return taskStore.listTasks(cursor, sessionId);
+        return taskStore.listTasks(cursor, sessionId2);
       }
     };
   }
@@ -56829,8 +56829,8 @@ var Server = class extends Protocol {
     this._serverInfo = _serverInfo;
     this._loggingLevels = /* @__PURE__ */ new Map();
     this.LOG_LEVEL_SEVERITY = new Map(LoggingLevelSchema.options.map((level, index) => [level, index]));
-    this.isMessageIgnored = (level, sessionId) => {
-      const currentLevel = this._loggingLevels.get(sessionId);
+    this.isMessageIgnored = (level, sessionId2) => {
+      const currentLevel = this._loggingLevels.get(sessionId2);
       return currentLevel ? this.LOG_LEVEL_SEVERITY.get(level) < this.LOG_LEVEL_SEVERITY.get(currentLevel) : false;
     };
     this._capabilities = (_a = options === null || options === void 0 ? void 0 : options.capabilities) !== null && _a !== void 0 ? _a : {};
@@ -57141,9 +57141,9 @@ var Server = class extends Protocol {
   async listRoots(params, options) {
     return this.request({ method: "roots/list", params }, ListRootsResultSchema, options);
   }
-  async sendLoggingMessage(params, sessionId) {
+  async sendLoggingMessage(params, sessionId2) {
     if (this._capabilities.logging) {
-      if (!this.isMessageIgnored(params.level, sessionId)) {
+      if (!this.isMessageIgnored(params.level, sessionId2)) {
         return this.notification({ method: "notifications/message", params });
       }
     }
@@ -57862,8 +57862,8 @@ var McpServer = class {
   isConnected() {
     return this.server.transport !== void 0;
   }
-  async sendLoggingMessage(params, sessionId) {
-    return this.server.sendLoggingMessage(params, sessionId);
+  async sendLoggingMessage(params, sessionId2) {
+    return this.server.sendLoggingMessage(params, sessionId2);
   }
   sendResourceListChanged() {
     if (this.isConnected()) {
@@ -64616,8 +64616,8 @@ var SessionLock = class {
   lockId;
   held = false;
   lockInfo = null;
-  constructor(sessionId) {
-    this.lockPath = getSessionLockPath(sessionId);
+  constructor(sessionId2) {
+    this.lockPath = getSessionLockPath(sessionId2);
     this.lockId = crypto4.randomUUID();
   }
   /**
@@ -64954,16 +64954,16 @@ var pythonReplSchema = external_exports.object({
   projectDir: external_exports.string().optional().describe("Project directory containing .venv/. Defaults to current working directory.")
 });
 var executionCounters = /* @__PURE__ */ new Map();
-function getNextExecutionCount(sessionId) {
-  const current = executionCounters.get(sessionId) || 0;
+function getNextExecutionCount(sessionId2) {
+  const current = executionCounters.get(sessionId2) || 0;
   const next = current + 1;
-  executionCounters.set(sessionId, next);
+  executionCounters.set(sessionId2, next);
   return next;
 }
-function formatExecuteResult(result, sessionId, executionLabel, executionCount) {
+function formatExecuteResult(result, sessionId2, executionLabel, executionCount) {
   const lines = [];
   lines.push("=== Python REPL Execution ===");
-  lines.push(`Session: ${sessionId}`);
+  lines.push(`Session: ${sessionId2}`);
   if (executionLabel) {
     lines.push(`Label: ${executionLabel}`);
   }
@@ -65016,10 +65016,10 @@ function formatExecuteResult(result, sessionId, executionLabel, executionCount) 
   lines.push(result.success ? "=== Execution Complete ===" : "=== Execution Failed ===");
   return lines.join("\n");
 }
-function formatStateResult(result, sessionId) {
+function formatStateResult(result, sessionId2) {
   const lines = [];
   lines.push("=== Python REPL State ===");
-  lines.push(`Session: ${sessionId}`);
+  lines.push(`Session: ${sessionId2}`);
   lines.push("");
   lines.push("--- Memory ---");
   lines.push(`RSS: ${result.memory.rss_mb.toFixed(1)} MB`);
@@ -65043,10 +65043,10 @@ function formatStateResult(result, sessionId) {
   lines.push("=== State Retrieved ===");
   return lines.join("\n");
 }
-function formatResetResult(result, sessionId) {
+function formatResetResult(result, sessionId2) {
   const lines = [];
   lines.push("=== Python REPL Reset ===");
-  lines.push(`Session: ${sessionId}`);
+  lines.push(`Session: ${sessionId2}`);
   lines.push(`Status: ${result.status}`);
   lines.push("");
   lines.push("--- Memory After Reset ---");
@@ -65056,10 +65056,10 @@ function formatResetResult(result, sessionId) {
   lines.push("=== Namespace Cleared ===");
   return lines.join("\n");
 }
-function formatInterruptResult(result, sessionId) {
+function formatInterruptResult(result, sessionId2) {
   const lines = [];
   lines.push("=== Python REPL Interrupt ===");
-  lines.push(`Session: ${sessionId}`);
+  lines.push(`Session: ${sessionId2}`);
   lines.push(`Status: ${result.status}`);
   if (result.terminatedBy) {
     lines.push(`Terminated By: ${result.terminatedBy}`);
@@ -65071,10 +65071,10 @@ function formatInterruptResult(result, sessionId) {
   lines.push("=== Execution Interrupted ===");
   return lines.join("\n");
 }
-function formatLockTimeoutError(error2, sessionId) {
+function formatLockTimeoutError(error2, sessionId2) {
   const lines = [];
   lines.push("=== Session Busy ===");
-  lines.push(`Session: ${sessionId}`);
+  lines.push(`Session: ${sessionId2}`);
   lines.push("");
   lines.push("The session is currently busy processing another request.");
   lines.push(`Queue timeout: ${error2.timeout}ms`);
@@ -65092,10 +65092,10 @@ function formatLockTimeoutError(error2, sessionId) {
   lines.push('  3. Use the "reset" action to clear the session');
   return lines.join("\n");
 }
-function formatSocketError(error2, sessionId) {
+function formatSocketError(error2, sessionId2) {
   const lines = [];
   lines.push("=== Connection Error ===");
-  lines.push(`Session: ${sessionId}`);
+  lines.push(`Session: ${sessionId2}`);
   lines.push("");
   lines.push(`Error: ${error2.message}`);
   lines.push(`Socket: ${error2.socketPath}`);
@@ -65106,18 +65106,18 @@ function formatSocketError(error2, sessionId) {
   lines.push("  3. Ensure .venv exists with Python installed");
   return lines.join("\n");
 }
-function formatGeneralError(error2, sessionId, action) {
+function formatGeneralError(error2, sessionId2, action) {
   const lines = [];
   lines.push("=== Error ===");
-  lines.push(`Session: ${sessionId}`);
+  lines.push(`Session: ${sessionId2}`);
   lines.push(`Action: ${action}`);
   lines.push("");
   lines.push(`Type: ${error2.name}`);
   lines.push(`Message: ${error2.message}`);
   return lines.join("\n");
 }
-async function handleExecute(sessionId, socketPath, code, executionTimeout, executionLabel) {
-  const executionCount = getNextExecutionCount(sessionId);
+async function handleExecute(sessionId2, socketPath, code, executionTimeout, executionLabel) {
+  const executionCount = getNextExecutionCount(sessionId2);
   try {
     const result = await sendSocketRequest(
       socketPath,
@@ -65126,7 +65126,7 @@ async function handleExecute(sessionId, socketPath, code, executionTimeout, exec
       executionTimeout + 1e4
       // Allow extra time for response
     );
-    return formatExecuteResult(result, sessionId, executionLabel, executionCount);
+    return formatExecuteResult(result, sessionId2, executionLabel, executionCount);
   } catch (error2) {
     if (error2 instanceof SocketConnectionError) {
       throw error2;
@@ -65134,7 +65134,7 @@ async function handleExecute(sessionId, socketPath, code, executionTimeout, exec
     if (error2 instanceof SocketTimeoutError) {
       return [
         "=== Execution Timeout ===",
-        `Session: ${sessionId}`,
+        `Session: ${sessionId2}`,
         `Label: ${executionLabel || "(none)"}`,
         "",
         `The code execution exceeded the timeout of ${executionTimeout / 1e3} seconds.`,
@@ -65146,7 +65146,7 @@ async function handleExecute(sessionId, socketPath, code, executionTimeout, exec
     if (error2 instanceof JsonRpcError) {
       return [
         "=== Execution Failed ===",
-        `Session: ${sessionId}`,
+        `Session: ${sessionId2}`,
         "",
         `Error Code: ${error2.code}`,
         `Message: ${error2.message}`,
@@ -65156,15 +65156,15 @@ async function handleExecute(sessionId, socketPath, code, executionTimeout, exec
     throw error2;
   }
 }
-async function handleReset(sessionId, socketPath) {
+async function handleReset(sessionId2, socketPath) {
   try {
     const result = await sendSocketRequest(socketPath, "reset", {}, 1e4);
-    return formatResetResult(result, sessionId);
+    return formatResetResult(result, sessionId2);
   } catch (_error) {
-    await killBridgeWithEscalation(sessionId);
+    await killBridgeWithEscalation(sessionId2);
     return [
       "=== Bridge Restarted ===",
-      `Session: ${sessionId}`,
+      `Session: ${sessionId2}`,
       "",
       "The bridge was unresponsive and has been terminated.",
       "A new bridge will be spawned on the next request.",
@@ -65173,10 +65173,10 @@ async function handleReset(sessionId, socketPath) {
     ].join("\n");
   }
 }
-async function handleGetState(sessionId, socketPath) {
+async function handleGetState(sessionId2, socketPath) {
   try {
     const result = await sendSocketRequest(socketPath, "get_state", {}, 5e3);
-    return formatStateResult(result, sessionId);
+    return formatStateResult(result, sessionId2);
   } catch (error2) {
     if (error2 instanceof SocketConnectionError) {
       throw error2;
@@ -65184,7 +65184,7 @@ async function handleGetState(sessionId, socketPath) {
     if (error2 instanceof SocketTimeoutError) {
       return [
         "=== State Retrieval Timeout ===",
-        `Session: ${sessionId}`,
+        `Session: ${sessionId2}`,
         "",
         "Could not retrieve state within timeout.",
         "The bridge may be busy with a long-running execution."
@@ -65193,7 +65193,7 @@ async function handleGetState(sessionId, socketPath) {
     throw error2;
   }
 }
-async function handleInterrupt(sessionId, socketPath, gracePeriodMs = 5e3) {
+async function handleInterrupt(sessionId2, socketPath, gracePeriodMs = 5e3) {
   try {
     const result = await sendSocketRequest(
       socketPath,
@@ -65207,17 +65207,17 @@ async function handleInterrupt(sessionId, socketPath, gracePeriodMs = 5e3) {
         status: result.status || "interrupted",
         terminatedBy: "graceful"
       },
-      sessionId
+      sessionId2
     );
   } catch {
-    const escalationResult = await killBridgeWithEscalation(sessionId, { gracePeriodMs });
+    const escalationResult = await killBridgeWithEscalation(sessionId2, { gracePeriodMs });
     return formatInterruptResult(
       {
         status: "force_killed",
         terminatedBy: escalationResult.terminatedBy,
         terminationTimeMs: escalationResult.terminationTimeMs
       },
-      sessionId
+      sessionId2
     );
   }
 }
@@ -65234,7 +65234,7 @@ async function pythonReplHandler(input) {
   }
   const {
     action,
-    researchSessionID: sessionId,
+    researchSessionID: sessionId2,
     code,
     executionLabel,
     executionTimeout,
@@ -65242,7 +65242,7 @@ async function pythonReplHandler(input) {
     projectDir
   } = parseResult.data;
   try {
-    validatePathSegment(sessionId, "researchSessionID");
+    validatePathSegment(sessionId2, "researchSessionID");
   } catch (error2) {
     return [
       "=== Invalid Session ID ===",
@@ -65267,23 +65267,23 @@ async function pythonReplHandler(input) {
       `  code: "print('Hello!')"`
     ].join("\n");
   }
-  const lock = new SessionLock(sessionId);
+  const lock = new SessionLock(sessionId2);
   try {
     await lock.acquire(queueTimeout);
   } catch (error2) {
     if (error2 instanceof LockTimeoutError) {
-      return formatLockTimeoutError(error2, sessionId);
+      return formatLockTimeoutError(error2, sessionId2);
     }
-    return formatGeneralError(error2, sessionId, action);
+    return formatGeneralError(error2, sessionId2, action);
   }
   try {
     let meta;
     try {
-      meta = await ensureBridge(sessionId, projectDir);
+      meta = await ensureBridge(sessionId2, projectDir);
     } catch (error2) {
       return [
         "=== Bridge Startup Failed ===",
-        `Session: ${sessionId}`,
+        `Session: ${sessionId2}`,
         "",
         `Error: ${error2.message}`,
         "",
@@ -65296,7 +65296,7 @@ async function pythonReplHandler(input) {
       case "execute":
         try {
           return await handleExecute(
-            sessionId,
+            sessionId2,
             meta.socketPath,
             code,
             executionTimeout,
@@ -65305,9 +65305,9 @@ async function pythonReplHandler(input) {
         } catch (error2) {
           if (error2 instanceof SocketConnectionError) {
             try {
-              meta = await spawnBridgeServer(sessionId, projectDir);
+              meta = await spawnBridgeServer(sessionId2, projectDir);
               return await handleExecute(
-                sessionId,
+                sessionId2,
                 meta.socketPath,
                 code,
                 executionTimeout,
@@ -65316,25 +65316,25 @@ async function pythonReplHandler(input) {
             } catch (retryError) {
               return formatSocketError(
                 retryError instanceof SocketConnectionError ? retryError : new SocketConnectionError(retryError.message, meta.socketPath),
-                sessionId
+                sessionId2
               );
             }
           }
-          return formatGeneralError(error2, sessionId, action);
+          return formatGeneralError(error2, sessionId2, action);
         }
       case "reset":
-        return await handleReset(sessionId, meta.socketPath);
+        return await handleReset(sessionId2, meta.socketPath);
       case "get_state":
         try {
-          return await handleGetState(sessionId, meta.socketPath);
+          return await handleGetState(sessionId2, meta.socketPath);
         } catch (error2) {
           if (error2 instanceof SocketConnectionError) {
-            return formatSocketError(error2, sessionId);
+            return formatSocketError(error2, sessionId2);
           }
-          return formatGeneralError(error2, sessionId, action);
+          return formatGeneralError(error2, sessionId2, action);
         }
       case "interrupt":
-        return await handleInterrupt(sessionId, meta.socketPath);
+        return await handleInterrupt(sessionId2, meta.socketPath);
       default:
         return [
           "=== Unknown Action ===",
@@ -65663,7 +65663,7 @@ function getLegacyStateFileCandidates(mode, root2) {
   ];
   return [...new Set(candidates)];
 }
-function clearLegacyStateCandidates(mode, root2, sessionId) {
+function clearLegacyStateCandidates(mode, root2, sessionId2) {
   let cleared = 0;
   let hadFailure = false;
   for (const legacyPath of getLegacyStateFileCandidates(mode, root2)) {
@@ -65671,9 +65671,9 @@ function clearLegacyStateCandidates(mode, root2, sessionId) {
       continue;
     }
     try {
-      if (sessionId) {
+      if (sessionId2) {
         const raw = JSON.parse((0, import_fs19.readFileSync)(legacyPath, "utf-8"));
-        if (!canClearStateForSession(raw, sessionId)) {
+        if (!canClearStateForSession(raw, sessionId2)) {
           continue;
         }
       }
@@ -65698,15 +65698,15 @@ var stateReadTool = {
     const { mode, workingDirectory, session_id } = args;
     try {
       const root2 = validateWorkingDirectory(workingDirectory);
-      const sessionId = session_id;
-      if (sessionId) {
-        validateSessionId(sessionId);
-        const statePath2 = MODE_CONFIGS[mode] ? getStateFilePath(root2, mode, sessionId) : resolveSessionStatePath(mode, sessionId, root2);
+      const sessionId2 = session_id;
+      if (sessionId2) {
+        validateSessionId(sessionId2);
+        const statePath2 = MODE_CONFIGS[mode] ? getStateFilePath(root2, mode, sessionId2) : resolveSessionStatePath(mode, sessionId2, root2);
         if (!(0, import_fs19.existsSync)(statePath2)) {
           return {
             content: [{
               type: "text",
-              text: `No state found for mode: ${mode} in session: ${sessionId}
+              text: `No state found for mode: ${mode} in session: ${sessionId2}
 Expected path: ${statePath2}`
             }]
           };
@@ -65716,7 +65716,7 @@ Expected path: ${statePath2}`
         return {
           content: [{
             type: "text",
-            text: `## State for ${mode} (session: ${sessionId})
+            text: `## State for ${mode} (session: ${sessionId2})
 
 Path: ${statePath2}
 
@@ -65853,7 +65853,7 @@ var stateWriteTool = {
     } = args;
     try {
       const root2 = validateWorkingDirectory(workingDirectory);
-      const sessionId = session_id;
+      const sessionId2 = session_id;
       if (state) {
         const validation = validatePayload(state);
         if (!validation.valid) {
@@ -65867,10 +65867,10 @@ var stateWriteTool = {
         }
       }
       let statePath;
-      if (sessionId) {
-        validateSessionId(sessionId);
-        ensureSessionStateDir(sessionId, root2);
-        statePath = MODE_CONFIGS[mode] ? getStateFilePath(root2, mode, sessionId) : resolveSessionStatePath(mode, sessionId, root2);
+      if (sessionId2) {
+        validateSessionId(sessionId2);
+        ensureSessionStateDir(sessionId2, root2);
+        statePath = MODE_CONFIGS[mode] ? getStateFilePath(root2, mode, sessionId2) : resolveSessionStatePath(mode, sessionId2, root2);
       } else {
         ensureOmcDir("state", root2);
         statePath = getStatePath(mode, root2);
@@ -65896,14 +65896,14 @@ var stateWriteTool = {
         ...builtState,
         _meta: {
           mode,
-          sessionId: sessionId || null,
+          sessionId: sessionId2 || null,
           updatedAt: (/* @__PURE__ */ new Date()).toISOString(),
           updatedBy: "state_write_tool"
         }
       };
       atomicWriteJsonSync(statePath, stateWithMeta);
-      const sessionInfo = sessionId ? ` (session: ${sessionId})` : " (legacy path)";
-      const warningMessage = sessionId ? "" : "\n\nWARNING: No session_id provided. State written to legacy shared path which may leak across parallel sessions. Pass session_id for session-scoped isolation.";
+      const sessionInfo = sessionId2 ? ` (session: ${sessionId2})` : " (legacy path)";
+      const warningMessage = sessionId2 ? "" : "\n\nWARNING: No session_id provided. State written to legacy shared path which may leak across parallel sessions. Pass session_id for session-scoped isolation.";
       return {
         content: [{
           type: "text",
@@ -65939,7 +65939,7 @@ var stateClearTool = {
     const { mode, workingDirectory, session_id } = args;
     try {
       const root2 = validateWorkingDirectory(workingDirectory);
-      const sessionId = session_id;
+      const sessionId2 = session_id;
       const cleanedTeamNames = /* @__PURE__ */ new Set();
       const collectTeamNamesForCleanup = (statePath) => {
         if (mode !== "team") return;
@@ -65947,12 +65947,12 @@ var stateClearTool = {
           cleanedTeamNames.add(teamName);
         }
       };
-      if (sessionId) {
-        validateSessionId(sessionId);
-        collectTeamNamesForCleanup(resolveSessionStatePath("team", sessionId, root2));
-        collectTeamNamesForCleanup(getStateFilePath(root2, "team", sessionId));
+      if (sessionId2) {
+        validateSessionId(sessionId2);
+        collectTeamNamesForCleanup(resolveSessionStatePath("team", sessionId2, root2));
+        collectTeamNamesForCleanup(getStateFilePath(root2, "team", sessionId2));
         const now = Date.now();
-        const cancelSignalPath = resolveSessionStatePath("cancel-signal", sessionId, root2);
+        const cancelSignalPath = resolveSessionStatePath("cancel-signal", sessionId2, root2);
         atomicWriteJsonSync(cancelSignalPath, {
           active: true,
           requested_at: new Date(now).toISOString(),
@@ -65961,8 +65961,8 @@ var stateClearTool = {
           source: "state_clear"
         });
         if (MODE_CONFIGS[mode]) {
-          const success = clearModeState(mode, root2, sessionId);
-          const legacyCleanup2 = clearLegacyStateCandidates(mode, root2, sessionId);
+          const success = clearModeState(mode, root2, sessionId2);
+          const legacyCleanup2 = clearLegacyStateCandidates(mode, root2, sessionId2);
           const ghostNote2 = legacyCleanup2.cleared > 0 ? " (ghost legacy file also removed)" : "";
           const runtimeCleanupNote2 = (() => {
             if (mode !== "team") return "";
@@ -65978,23 +65978,23 @@ var stateClearTool = {
             return {
               content: [{
                 type: "text",
-                text: `Successfully cleared state for mode: ${mode} in session: ${sessionId}${ghostNote2}${runtimeCleanupNote2}`
+                text: `Successfully cleared state for mode: ${mode} in session: ${sessionId2}${ghostNote2}${runtimeCleanupNote2}`
               }]
             };
           } else {
             return {
               content: [{
                 type: "text",
-                text: `Warning: Some files could not be removed for mode: ${mode} in session: ${sessionId}${ghostNote2}${runtimeCleanupNote2}`
+                text: `Warning: Some files could not be removed for mode: ${mode} in session: ${sessionId2}${ghostNote2}${runtimeCleanupNote2}`
               }]
             };
           }
         }
-        const statePath = resolveSessionStatePath(mode, sessionId, root2);
+        const statePath = resolveSessionStatePath(mode, sessionId2, root2);
         if ((0, import_fs19.existsSync)(statePath)) {
           (0, import_fs19.unlinkSync)(statePath);
         }
-        const legacyCleanup = clearLegacyStateCandidates(mode, root2, sessionId);
+        const legacyCleanup = clearLegacyStateCandidates(mode, root2, sessionId2);
         const ghostNote = legacyCleanup.cleared > 0 ? " (ghost legacy file also removed)" : "";
         const runtimeCleanupNote = (() => {
           if (mode !== "team") return "";
@@ -66009,7 +66009,7 @@ var stateClearTool = {
         return {
           content: [{
             type: "text",
-            text: `${legacyCleanup.hadFailure ? "Warning: Some files could not be removed" : "Successfully cleared state"} for mode: ${mode} in session: ${sessionId}${ghostNote}${runtimeCleanupNote}`
+            text: `${legacyCleanup.hadFailure ? "Warning: Some files could not be removed" : "Successfully cleared state"} for mode: ${mode} in session: ${sessionId2}${ghostNote}${runtimeCleanupNote}`
           }]
         };
       }
@@ -66121,13 +66121,13 @@ var stateListActiveTool = {
     const { workingDirectory, session_id } = args;
     try {
       const root2 = validateWorkingDirectory(workingDirectory);
-      const sessionId = session_id;
-      if (sessionId) {
-        validateSessionId(sessionId);
-        const activeModes = [...getActiveModes(root2, sessionId)];
+      const sessionId2 = session_id;
+      if (sessionId2) {
+        validateSessionId(sessionId2);
+        const activeModes = [...getActiveModes(root2, sessionId2)];
         for (const mode of EXTRA_STATE_ONLY_MODES) {
           try {
-            const statePath = resolveSessionStatePath(mode, sessionId, root2);
+            const statePath = resolveSessionStatePath(mode, sessionId2, root2);
             if ((0, import_fs19.existsSync)(statePath)) {
               const content = (0, import_fs19.readFileSync)(statePath, "utf-8");
               const state = JSON.parse(content);
@@ -66142,7 +66142,7 @@ var stateListActiveTool = {
           return {
             content: [{
               type: "text",
-              text: `## Active Modes (session: ${sessionId})
+              text: `## Active Modes (session: ${sessionId2})
 
 No modes are currently active in this session.`
             }]
@@ -66152,7 +66152,7 @@ No modes are currently active in this session.`
         return {
           content: [{
             type: "text",
-            text: `## Active Modes (session: ${sessionId}, ${activeModes.length})
+            text: `## Active Modes (session: ${sessionId2}, ${activeModes.length})
 
 ${modeList}`
           }]
@@ -66245,14 +66245,14 @@ var stateGetStatusTool = {
     const { mode, workingDirectory, session_id } = args;
     try {
       const root2 = validateWorkingDirectory(workingDirectory);
-      const sessionId = session_id;
+      const sessionId2 = session_id;
       if (mode) {
         const lines2 = [`## Status: ${mode}
 `];
-        if (sessionId) {
-          validateSessionId(sessionId);
-          const statePath = MODE_CONFIGS[mode] ? getStateFilePath(root2, mode, sessionId) : resolveSessionStatePath(mode, sessionId, root2);
-          const active = MODE_CONFIGS[mode] ? isModeActive(mode, root2, sessionId) : (0, import_fs19.existsSync)(statePath) && (() => {
+        if (sessionId2) {
+          validateSessionId(sessionId2);
+          const statePath = MODE_CONFIGS[mode] ? getStateFilePath(root2, mode, sessionId2) : resolveSessionStatePath(mode, sessionId2, root2);
+          const active = MODE_CONFIGS[mode] ? isModeActive(mode, root2, sessionId2) : (0, import_fs19.existsSync)(statePath) && (() => {
             try {
               const content = (0, import_fs19.readFileSync)(statePath, "utf-8");
               const state = JSON.parse(content);
@@ -66272,7 +66272,7 @@ var stateGetStatusTool = {
               statePreview = "Error reading state file";
             }
           }
-          lines2.push(`### Session: ${sessionId}`);
+          lines2.push(`### Session: ${sessionId2}`);
           lines2.push(`- **Active:** ${active ? "Yes" : "No"}`);
           lines2.push(`- **State Path:** ${statePath}`);
           lines2.push(`- **Exists:** ${(0, import_fs19.existsSync)(statePath) ? "Yes" : "No"}`);
@@ -66332,14 +66332,14 @@ No active sessions for this mode.`);
           }]
         };
       }
-      const statuses = getAllModeStatuses(root2, sessionId);
-      const lines = sessionId ? [`## All Mode Statuses (session: ${sessionId})
+      const statuses = getAllModeStatuses(root2, sessionId2);
+      const lines = sessionId2 ? [`## All Mode Statuses (session: ${sessionId2})
 `] : ["## All Mode Statuses\n"];
       for (const status of statuses) {
         const icon = status.active ? "[ACTIVE]" : "[INACTIVE]";
         lines.push(`${icon} **${status.mode}**: ${status.active ? "Active" : "Inactive"}`);
         lines.push(`   Path: \`${status.stateFilePath}\``);
-        if (!sessionId && MODE_CONFIGS[status.mode]) {
+        if (!sessionId2 && MODE_CONFIGS[status.mode]) {
           const activeSessions = getActiveSessionsForMode(status.mode, root2);
           if (activeSessions.length > 0) {
             lines.push(`   Active sessions: ${activeSessions.join(", ")}`);
@@ -66347,7 +66347,7 @@ No active sessions for this mode.`);
         }
       }
       for (const mode2 of EXTRA_STATE_ONLY_MODES) {
-        const statePath = sessionId ? resolveSessionStatePath(mode2, sessionId, root2) : getStatePath(mode2, root2);
+        const statePath = sessionId2 ? resolveSessionStatePath(mode2, sessionId2, root2) : getStatePath(mode2, root2);
         let active = false;
         if ((0, import_fs19.existsSync)(statePath)) {
           try {
@@ -67626,12 +67626,12 @@ function buildTranscriptEntry(entry) {
     return null;
   }
   const message = entry.message;
-  const sessionId = typeof entry.sessionId === "string" ? entry.sessionId : typeof entry.session_id === "string" ? entry.session_id : typeof message?.sessionId === "string" ? message.sessionId : void 0;
-  if (!sessionId) {
+  const sessionId2 = typeof entry.sessionId === "string" ? entry.sessionId : typeof entry.session_id === "string" ? entry.session_id : typeof message?.sessionId === "string" ? message.sessionId : void 0;
+  if (!sessionId2) {
     return null;
   }
   return {
-    sessionId,
+    sessionId: sessionId2,
     agentId: typeof entry.agentId === "string" ? entry.agentId : void 0,
     timestamp: typeof entry.timestamp === "string" ? entry.timestamp : void 0,
     projectPath: typeof entry.cwd === "string" ? entry.cwd : void 0,
@@ -67641,8 +67641,8 @@ function buildTranscriptEntry(entry) {
   };
 }
 function buildJsonArtifactEntry(entry, sourceType) {
-  const sessionId = typeof entry.session_id === "string" ? entry.session_id : typeof entry.sessionId === "string" ? entry.sessionId : void 0;
-  if (!sessionId) {
+  const sessionId2 = typeof entry.session_id === "string" ? entry.session_id : typeof entry.sessionId === "string" ? entry.sessionId : void 0;
+  if (!sessionId2) {
     return null;
   }
   const texts = stringLeaves(entry);
@@ -67652,7 +67652,7 @@ function buildJsonArtifactEntry(entry, sourceType) {
   const timestamp = typeof entry.ended_at === "string" ? entry.ended_at : typeof entry.started_at === "string" ? entry.started_at : typeof entry.timestamp === "string" ? entry.timestamp : void 0;
   const entryType = sourceType === "omc-session-summary" ? "session-summary" : "session-replay";
   return {
-    sessionId,
+    sessionId: sessionId2,
     timestamp,
     projectPath: typeof entry.cwd === "string" ? entry.cwd : void 0,
     entryType,
@@ -68029,8 +68029,8 @@ var traceTimelineTool = {
     const { sessionId: requestedSessionId, filter = "all", last, workingDirectory } = args;
     try {
       const root2 = validateWorkingDirectory(workingDirectory);
-      const sessionId = requestedSessionId || findLatestSessionId(root2);
-      if (!sessionId) {
+      const sessionId2 = requestedSessionId || findLatestSessionId(root2);
+      if (!sessionId2) {
         return {
           content: [{
             type: "text",
@@ -68038,12 +68038,12 @@ var traceTimelineTool = {
           }]
         };
       }
-      let events = readReplayEvents(root2, sessionId);
+      let events = readReplayEvents(root2, sessionId2);
       if (events.length === 0) {
         return {
           content: [{
             type: "text",
-            text: `## Agent Flow Trace (session: ${sessionId})
+            text: `## Agent Flow Trace (session: ${sessionId2})
 
 No events recorded for this session.`
           }]
@@ -68055,7 +68055,7 @@ No events recorded for this session.`
       }
       const duration3 = events.length > 0 ? (events[events.length - 1].t - events[0].t).toFixed(1) : "0.0";
       const lines = [
-        `## Agent Flow Trace (session: ${sessionId})`,
+        `## Agent Flow Trace (session: ${sessionId2})`,
         `Duration: ${duration3}s | Events: ${events.length}${filter !== "all" ? ` | Filter: ${filter}` : ""}`,
         ""
       ];
@@ -68089,8 +68089,8 @@ var traceSummaryTool = {
     const { sessionId: requestedSessionId, workingDirectory } = args;
     try {
       const root2 = validateWorkingDirectory(workingDirectory);
-      const sessionId = requestedSessionId || findLatestSessionId(root2);
-      if (!sessionId) {
+      const sessionId2 = requestedSessionId || findLatestSessionId(root2);
+      if (!sessionId2) {
         return {
           content: [{
             type: "text",
@@ -68098,19 +68098,19 @@ var traceSummaryTool = {
           }]
         };
       }
-      const summary = getReplaySummary(root2, sessionId);
+      const summary = getReplaySummary(root2, sessionId2);
       if (summary.total_events === 0) {
         return {
           content: [{
             type: "text",
-            text: `## Trace Summary (session: ${sessionId})
+            text: `## Trace Summary (session: ${sessionId2})
 
 No events recorded.`
           }]
         };
       }
       const lines = [
-        `## Trace Summary (session: ${sessionId})`,
+        `## Trace Summary (session: ${sessionId2})`,
         "",
         `### Overview`,
         `- **Duration:** ${summary.duration_seconds.toFixed(1)}s`,
@@ -68166,7 +68166,7 @@ No events recorded.`
         }
         lines.push("");
       }
-      const flowEvents = buildExecutionFlow(readReplayEvents(root2, sessionId));
+      const flowEvents = buildExecutionFlow(readReplayEvents(root2, sessionId2));
       if (flowEvents.length > 0) {
         lines.push(`### Execution Flow`);
         for (let i = 0; i < flowEvents.length; i++) {
@@ -68219,27 +68219,108 @@ No events recorded.`
 var traceTools = [traceTimelineTool, traceSummaryTool, sessionSearchTool];
 
 // src/tools/aosp-tools.ts
-var AOSP_MCP_URL = process.env.AOSP_MCP_URL || "http://10.23.12.96:8888/mcp";
+var AOSP_MCP_URL = process.env.AOSP_MCP_URL || "http://10.23.12.96:8888/mcp/";
 var AOSP_MCP_KEY = process.env.AOSP_MCP_KEY || "sk-abc123";
-async function callAospMcp(method, params) {
-  const body = JSON.stringify({
-    jsonrpc: "2.0",
-    id: 1,
-    method,
-    params
-  });
+var sessionId = null;
+var sessionInitPromise = null;
+var requestCounter = 0;
+function nextId() {
+  return ++requestCounter;
+}
+function parseSseResponse(body) {
+  const lines = body.split("\n");
+  for (const line of lines) {
+    if (line.startsWith("data: ")) {
+      const data = line.slice(6).trim();
+      if (data) {
+        return JSON.parse(data);
+      }
+    }
+  }
+  return JSON.parse(body);
+}
+async function mcpPost(payload, sid) {
+  const headers = {
+    "Content-Type": "application/json",
+    "Accept": "application/json, text/event-stream",
+    "Authorization": `Bearer ${AOSP_MCP_KEY}`
+  };
+  if (sid) {
+    headers["Mcp-Session-Id"] = sid;
+  }
   const res = await fetch(AOSP_MCP_URL, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "Authorization": `Bearer ${AOSP_MCP_KEY}`
-    },
-    body
+    headers,
+    body: JSON.stringify(payload)
   });
-  if (!res.ok) {
-    throw new Error(`AOSP MCP request failed: ${res.status} ${res.statusText}`);
+  const body = await res.text();
+  return { body, headers: res.headers, status: res.status };
+}
+async function initSession() {
+  const initRes = await mcpPost({
+    jsonrpc: "2.0",
+    id: nextId(),
+    method: "initialize",
+    params: {
+      protocolVersion: "2025-03-26",
+      capabilities: {},
+      clientInfo: { name: "omc-aosp", version: "1.0" }
+    }
+  });
+  if (initRes.status !== 200) {
+    throw new Error(`AOSP MCP initialize failed: ${initRes.status} \u2014 ${initRes.body}`);
   }
-  const json = await res.json();
+  const sid = initRes.headers.get("mcp-session-id");
+  if (!sid) {
+    throw new Error("AOSP MCP server did not return a session ID");
+  }
+  await mcpPost(
+    { jsonrpc: "2.0", method: "notifications/initialized" },
+    sid
+  ).catch(() => {
+  });
+  return sid;
+}
+async function getSession() {
+  if (sessionId) return sessionId;
+  if (!sessionInitPromise) {
+    sessionInitPromise = initSession().then((sid) => {
+      sessionId = sid;
+      sessionInitPromise = null;
+      return sid;
+    }).catch((err) => {
+      sessionInitPromise = null;
+      throw err;
+    });
+  }
+  return sessionInitPromise;
+}
+async function callAospMcp(method, params) {
+  let sid = await getSession();
+  const doCall = async (currentSid) => {
+    const res2 = await mcpPost(
+      { jsonrpc: "2.0", id: nextId(), method, params },
+      currentSid
+    );
+    if (res2.status === 400 || res2.status === 404) {
+      sessionId = null;
+      const newSid = await getSession();
+      const retry = await mcpPost(
+        { jsonrpc: "2.0", id: nextId(), method, params },
+        newSid
+      );
+      if (retry.status !== 200) {
+        throw new Error(`AOSP MCP request failed after session refresh: ${retry.status} \u2014 ${retry.body}`);
+      }
+      return retry;
+    }
+    if (res2.status !== 200) {
+      throw new Error(`AOSP MCP request failed: ${res2.status} \u2014 ${res2.body}`);
+    }
+    return res2;
+  };
+  const res = await doCall(sid);
+  const json = parseSseResponse(res.body);
   if (json.error) {
     throw new Error(`AOSP MCP error: ${json.error.message}`);
   }
@@ -68247,11 +68328,11 @@ async function callAospMcp(method, params) {
 }
 var aospCodeSearchTool = {
   name: "aosp_code_search",
-  description: 'Search AOSP (Android Open Source Project) codebase via remote MCP server. Use the "tool" param to specify which remote tool to call (e.g. "search", "lookup"), and "arguments" for tool-specific parameters.',
+  description: 'Search AOSP (Android Open Source Project) codebase via remote MCP server. Use the "tool" param to specify which remote tool to call (e.g. "search_code", "search_symbol", "search_file"), and "arguments" for tool-specific parameters.',
   annotations: { readOnlyHint: true, openWorldHint: true },
   schema: {
-    tool: external_exports.string().describe('Remote AOSP MCP tool name to invoke (e.g. "search", "lookup", "list_tools")'),
-    arguments: external_exports.record(external_exports.string(), external_exports.string()).optional().describe("Arguments to pass to the remote tool as key-value pairs")
+    tool: external_exports.string().describe('Remote AOSP MCP tool name to invoke (e.g. "search_code", "search_symbol", "search_file", "search_regex", "list_repos", "get_file_content", "list_tools")'),
+    arguments: external_exports.record(external_exports.string(), external_exports.union([external_exports.string(), external_exports.number(), external_exports.boolean()])).optional().describe("Arguments to pass to the remote tool as key-value pairs")
   },
   handler: async (args) => {
     try {
@@ -68765,13 +68846,13 @@ var SharedMessageSchema = external_exports.object({
 function getInteropDir(cwd2) {
   return (0, import_path38.join)(cwd2, ".omc", "state", "interop");
 }
-function initInteropSession(sessionId, omcCwd, omxCwd) {
+function initInteropSession(sessionId2, omcCwd, omxCwd) {
   const interopDir = getInteropDir(omcCwd);
   if (!(0, import_fs27.existsSync)(interopDir)) {
     (0, import_fs27.mkdirSync)(interopDir, { recursive: true });
   }
   const config2 = {
-    sessionId,
+    sessionId: sessionId2,
     createdAt: (/* @__PURE__ */ new Date()).toISOString(),
     omcCwd,
     omxCwd,
@@ -71371,19 +71452,19 @@ function formatFileChanges(stats) {
   }
   return lines.join("\n");
 }
-function buildVerificationReminder(sessionId) {
+function buildVerificationReminder(sessionId2) {
   let reminder = VERIFICATION_REMINDER;
-  if (sessionId) {
+  if (sessionId2) {
     reminder += `
 
 ---
 
 **If ANY verification fails, resume the subagent with the fix:**
-Task tool with resume="${sessionId}", prompt="fix: [describe the specific failure]"`;
+Task tool with resume="${sessionId2}", prompt="fix: [describe the specific failure]"`;
   }
   return reminder;
 }
-function buildOrchestratorReminder(planName, progress, sessionId) {
+function buildOrchestratorReminder(planName, progress, sessionId2) {
   const remaining = progress.total - progress.completed;
   return `
 ---
@@ -71392,7 +71473,7 @@ function buildOrchestratorReminder(planName, progress, sessionId) {
 
 ---
 
-${buildVerificationReminder(sessionId)}
+${buildVerificationReminder(sessionId2)}
 
 ALL pass? \u2192 commit atomic unit, mark \`[x]\`, next task.`;
 }
@@ -71430,7 +71511,7 @@ function suggestAgentForFile(filePath) {
   return suggestions[ext] || "executor";
 }
 function processOrchestratorPreTool(input) {
-  const { toolName, toolInput, sessionId } = input;
+  const { toolName, toolInput, sessionId: sessionId2 } = input;
   const directory = input.directory || process.cwd();
   const enforcementLevel = getEnforcementLevel(directory);
   if (enforcementLevel === "off") {
@@ -71448,7 +71529,7 @@ function processOrchestratorPreTool(input) {
         decision: "allowed",
         reason: "allowed_path",
         enforcementLevel,
-        sessionId
+        sessionId: sessionId2
       });
     }
     return { continue: true };
@@ -71460,7 +71541,7 @@ function processOrchestratorPreTool(input) {
     decision: enforcementLevel === "strict" ? "blocked" : "warned",
     reason: isSource ? "source_file" : "other",
     enforcementLevel,
-    sessionId
+    sessionId: sessionId2
   });
   const agentSuggestion = suggestAgentForFile(filePath);
   const warning = ORCHESTRATOR_DELEGATION_REQUIRED.replace("$FILE_PATH", filePath) + `
@@ -71739,9 +71820,9 @@ function completeBackgroundTask(id, directory, failed = false) {
     return false;
   }
 }
-function remapBackgroundTaskId(currentId, nextId, directory) {
+function remapBackgroundTaskId(currentId, nextId2, directory) {
   try {
-    if (currentId === nextId) {
+    if (currentId === nextId2) {
       return true;
     }
     const state = readHudState(directory);
@@ -71752,11 +71833,11 @@ function remapBackgroundTaskId(currentId, nextId, directory) {
     if (!task) {
       return false;
     }
-    const existingTask = state.backgroundTasks.find((t) => t.id === nextId);
+    const existingTask = state.backgroundTasks.find((t) => t.id === nextId2);
     if (existingTask && existingTask !== task) {
       return false;
     }
-    task.id = nextId;
+    task.id = nextId2;
     state.timestamp = (/* @__PURE__ */ new Date()).toISOString();
     return writeHudState(state, directory);
   } catch {
@@ -71786,7 +71867,7 @@ function completeMostRecentMatchingBackgroundTask(description, directory, failed
     return false;
   }
 }
-function remapMostRecentMatchingBackgroundTaskId(description, nextId, directory, agentType) {
+function remapMostRecentMatchingBackgroundTaskId(description, nextId2, directory, agentType) {
   try {
     const state = readHudState(directory);
     if (!state) {
@@ -71796,11 +71877,11 @@ function remapMostRecentMatchingBackgroundTaskId(description, nextId, directory,
     if (!task) {
       return false;
     }
-    const existingTask = state.backgroundTasks.find((t) => t.id === nextId);
+    const existingTask = state.backgroundTasks.find((t) => t.id === nextId2);
     if (existingTask && existingTask !== task) {
       return false;
     }
-    task.id = nextId;
+    task.id = nextId2;
     state.timestamp = (/* @__PURE__ */ new Date()).toISOString();
     return writeHudState(state, directory);
   } catch {
@@ -71926,16 +72007,16 @@ function taskLaunchDidFail(toolOutput) {
   const normalized = toolOutput.toLowerCase();
   return normalized.includes("error") || normalized.includes("failed");
 }
-function getModeStatePaths(directory, modeName, sessionId) {
+function getModeStatePaths(directory, modeName, sessionId2) {
   const stateDir = (0, import_path86.join)(getOmcRoot(directory), "state");
-  const safeSessionId = typeof sessionId === "string" && SAFE_SESSION_ID_PATTERN.test(sessionId) ? sessionId : void 0;
+  const safeSessionId = typeof sessionId2 === "string" && SAFE_SESSION_ID_PATTERN.test(sessionId2) ? sessionId2 : void 0;
   return [
     safeSessionId ? (0, import_path86.join)(stateDir, "sessions", safeSessionId, `${modeName}-state.json`) : null,
     (0, import_path86.join)(stateDir, `${modeName}-state.json`)
   ].filter((statePath) => Boolean(statePath));
 }
-function updateModeAwaitingConfirmation(directory, modeName, sessionId, awaitingConfirmation) {
-  for (const statePath of getModeStatePaths(directory, modeName, sessionId)) {
+function updateModeAwaitingConfirmation(directory, modeName, sessionId2, awaitingConfirmation) {
+  for (const statePath of getModeStatePaths(directory, modeName, sessionId2)) {
     if (!(0, import_fs70.existsSync)(statePath)) {
       continue;
     }
@@ -71958,14 +72039,14 @@ function updateModeAwaitingConfirmation(directory, modeName, sessionId, awaiting
     }
   }
 }
-function markModeAwaitingConfirmation(directory, sessionId, ...modeNames) {
+function markModeAwaitingConfirmation(directory, sessionId2, ...modeNames) {
   for (const modeName of modeNames) {
-    updateModeAwaitingConfirmation(directory, modeName, sessionId, true);
+    updateModeAwaitingConfirmation(directory, modeName, sessionId2, true);
   }
 }
-function confirmSkillModeStates(directory, skillName, sessionId) {
+function confirmSkillModeStates(directory, skillName, sessionId2) {
   for (const modeName of MODE_CONFIRMATION_SKILL_MAP[skillName] ?? []) {
-    updateModeAwaitingConfirmation(directory, modeName, sessionId, false);
+    updateModeAwaitingConfirmation(directory, modeName, sessionId2, false);
   }
 }
 function getSkillInvocationArgs(toolInput) {
@@ -71997,23 +72078,23 @@ function isConsensusPlanningSkillInvocation(skillName, toolInput) {
   }
   return getSkillInvocationArgs(toolInput).toLowerCase().includes("--consensus");
 }
-function activateRalplanState(directory, sessionId) {
+function activateRalplanState(directory, sessionId2) {
   writeModeState(
     "ralplan",
     {
       active: true,
-      session_id: sessionId,
+      session_id: sessionId2,
       current_phase: "ralplan",
       started_at: (/* @__PURE__ */ new Date()).toISOString()
     },
     directory,
-    sessionId
+    sessionId2
   );
 }
-function readTeamStagedState(directory, sessionId) {
+function readTeamStagedState(directory, sessionId2) {
   const stateDir = (0, import_path86.join)(getOmcRoot(directory), "state");
-  const statePaths = sessionId ? [
-    (0, import_path86.join)(stateDir, "sessions", sessionId, "team-state.json"),
+  const statePaths = sessionId2 ? [
+    (0, import_path86.join)(stateDir, "sessions", sessionId2, "team-state.json"),
     (0, import_path86.join)(stateDir, "team-state.json")
   ] : [(0, import_path86.join)(stateDir, "team-state.json")];
   for (const statePath of statePaths) {
@@ -72028,7 +72109,7 @@ function readTeamStagedState(directory, sessionId) {
         continue;
       }
       const stateSessionId = parsed.session_id || parsed.sessionId;
-      if (sessionId && stateSessionId && stateSessionId !== sessionId) {
+      if (sessionId2 && stateSessionId && stateSessionId !== sessionId2) {
         continue;
       }
       return parsed;
@@ -72056,9 +72137,9 @@ function getTeamStageForEnforcement(state) {
   const alias = TEAM_STAGE_ALIASES[stage];
   return alias && TEAM_ACTIVE_STAGES.has(alias) ? alias : null;
 }
-function readTeamStopBreakerCount(directory, sessionId) {
+function readTeamStopBreakerCount(directory, sessionId2) {
   const stateDir = (0, import_path86.join)(getOmcRoot(directory), "state");
-  const breakerPath = sessionId ? (0, import_path86.join)(stateDir, "sessions", sessionId, "team-stop-breaker.json") : (0, import_path86.join)(stateDir, "team-stop-breaker.json");
+  const breakerPath = sessionId2 ? (0, import_path86.join)(stateDir, "sessions", sessionId2, "team-stop-breaker.json") : (0, import_path86.join)(stateDir, "team-stop-breaker.json");
   try {
     if (!(0, import_fs70.existsSync)(breakerPath)) {
       return 0;
@@ -72076,9 +72157,9 @@ function readTeamStopBreakerCount(directory, sessionId) {
     return 0;
   }
 }
-function writeTeamStopBreakerCount(directory, sessionId, count) {
+function writeTeamStopBreakerCount(directory, sessionId2, count) {
   const stateDir = (0, import_path86.join)(getOmcRoot(directory), "state");
-  const breakerPath = sessionId ? (0, import_path86.join)(stateDir, "sessions", sessionId, "team-stop-breaker.json") : (0, import_path86.join)(stateDir, "team-stop-breaker.json");
+  const breakerPath = sessionId2 ? (0, import_path86.join)(stateDir, "sessions", sessionId2, "team-stop-breaker.json") : (0, import_path86.join)(stateDir, "team-stop-breaker.json");
   const safeCount = Number.isFinite(count) && count > 0 ? Math.floor(count) : 0;
   if (safeCount === 0) {
     try {
@@ -72200,7 +72281,7 @@ async function processKeywordDetector(input) {
     return { continue: true };
   }
   const cleanedText = removeCodeBlocks2(promptText);
-  const sessionId = input.sessionId;
+  const sessionId2 = input.sessionId;
   const directory = resolveToWorktreeRoot(input.directory);
   const messages = [];
   try {
@@ -72303,21 +72384,21 @@ Running directly without heavy agent stacking. Prefix with \`quick:\`, \`simple:
         }
         const hook = createRalphLoopHook2(directory);
         const started = hook.startLoop(
-          sessionId,
+          sessionId2,
           cleanPrompt,
           criticMode ? { criticMode } : void 0
         );
         if (started) {
-          markModeAwaitingConfirmation(directory, sessionId, "ralph", "ultrawork");
+          markModeAwaitingConfirmation(directory, sessionId2, "ralph", "ultrawork");
         }
         messages.push(RALPH_MESSAGE);
         break;
       }
       case "ultrawork": {
         const { activateUltrawork: activateUltrawork2 } = await Promise.resolve().then(() => (init_ultrawork(), ultrawork_exports));
-        const activated = activateUltrawork2(promptText, sessionId, directory);
+        const activated = activateUltrawork2(promptText, sessionId2, directory);
         if (activated) {
-          markModeAwaitingConfirmation(directory, sessionId, "ultrawork");
+          markModeAwaitingConfirmation(directory, sessionId2, "ultrawork");
         }
         messages.push(ULTRAWORK_MESSAGE);
         break;
@@ -72378,7 +72459,7 @@ async function processStopContinuation(_input) {
 }
 async function processPersistentMode(input) {
   const rawSessionId = input.session_id;
-  const sessionId = input.sessionId ?? rawSessionId;
+  const sessionId2 = input.sessionId ?? rawSessionId;
   const directory = resolveToWorktreeRoot(input.directory);
   const {
     checkPersistentModes: checkPersistentModes2,
@@ -72403,28 +72484,28 @@ async function processPersistentMode(input) {
     transcript_path: input.transcript_path,
     transcriptPath: input.transcriptPath
   };
-  const result = await checkPersistentModes2(sessionId, directory, stopContext);
+  const result = await checkPersistentModes2(sessionId2, directory, stopContext);
   const output = createHookOutput2(result);
   if (result.mode !== "none" || Boolean(output.message)) {
     return output;
   }
-  const teamState = readTeamStagedState(directory, sessionId);
+  const teamState = readTeamStagedState(directory, sessionId2);
   if (!teamState || teamState.active !== true || isTeamStateTerminal(teamState)) {
-    writeTeamStopBreakerCount(directory, sessionId, 0);
-    if (result.mode === "none" && sessionId) {
+    writeTeamStopBreakerCount(directory, sessionId2, 0);
+    if (result.mode === "none" && sessionId2) {
       const isAbort = stopContext.user_requested === true || stopContext.userRequested === true;
       const isContextLimit = stopContext.stop_reason === "context_limit" || stopContext.stopReason === "context_limit";
       if (!isAbort && !isContextLimit) {
-        _openclaw.wake("stop", { sessionId, projectPath: directory });
+        _openclaw.wake("stop", { sessionId: sessionId2, projectPath: directory });
         const stateDir = (0, import_path86.join)(getOmcRoot(directory), "state");
-        if (shouldSendIdleNotification2(stateDir, sessionId)) {
-          recordIdleNotificationSent2(stateDir, sessionId);
+        if (shouldSendIdleNotification2(stateDir, sessionId2)) {
+          recordIdleNotificationSent2(stateDir, sessionId2);
           const logSessionIdleNotifyFailure = createSwallowedErrorLogger(
             "hooks.bridge session-idle notification failed"
           );
           Promise.resolve().then(() => (init_notifications(), notifications_exports)).then(
             ({ notify: notify2 }) => notify2("session-idle", {
-              sessionId,
+              sessionId: sessionId2,
               projectPath: directory,
               profileName: process.env.OMC_NOTIFY_PROFILE
             }).catch(logSessionIdleNotifyFailure)
@@ -72435,24 +72516,24 @@ async function processPersistentMode(input) {
     return output;
   }
   if (isExplicitCancelCommand2(stopContext)) {
-    writeTeamStopBreakerCount(directory, sessionId, 0);
+    writeTeamStopBreakerCount(directory, sessionId2, 0);
     return output;
   }
   if (isAuthenticationError2(stopContext)) {
-    writeTeamStopBreakerCount(directory, sessionId, 0);
+    writeTeamStopBreakerCount(directory, sessionId2, 0);
     return output;
   }
   const stage = getTeamStageForEnforcement(teamState);
   if (!stage) {
-    writeTeamStopBreakerCount(directory, sessionId, 0);
+    writeTeamStopBreakerCount(directory, sessionId2, 0);
     return output;
   }
-  const newBreakerCount = readTeamStopBreakerCount(directory, sessionId) + 1;
+  const newBreakerCount = readTeamStopBreakerCount(directory, sessionId2) + 1;
   if (newBreakerCount > TEAM_STOP_BLOCKER_MAX) {
-    writeTeamStopBreakerCount(directory, sessionId, 0);
+    writeTeamStopBreakerCount(directory, sessionId2, 0);
     return output;
   }
-  writeTeamStopBreakerCount(directory, sessionId, newBreakerCount);
+  writeTeamStopBreakerCount(directory, sessionId2, newBreakerCount);
   const stagePrompt = getTeamStagePrompt(stage);
   const teamName = teamState.team_name || teamState.teamName || "team";
   const currentMessage = output.message ? `${output.message}
@@ -72478,7 +72559,7 @@ When team verification passes or cancel is requested, allow terminal cleanup beh
   };
 }
 async function processSessionStart(input) {
-  const sessionId = input.sessionId;
+  const sessionId2 = input.sessionId;
   const directory = resolveToWorktreeRoot(input.directory);
   const { initSilentAutoUpdate: initSilentAutoUpdate2 } = await Promise.resolve().then(() => (init_auto_update(), auto_update_exports));
   const { readAutopilotState: readAutopilotState2 } = await Promise.resolve().then(() => (init_autopilot(), autopilot_exports));
@@ -72486,20 +72567,20 @@ async function processSessionStart(input) {
   const { checkIncompleteTodos: checkIncompleteTodos2 } = await Promise.resolve().then(() => (init_todo_continuation(), todo_continuation_exports));
   const { buildAgentsOverlay: buildAgentsOverlay2 } = await Promise.resolve().then(() => (init_agents_overlay(), agents_overlay_exports));
   initSilentAutoUpdate2();
-  if (sessionId) {
+  if (sessionId2) {
     const logSessionStartNotifyFailure = createSwallowedErrorLogger(
       "hooks.bridge session-start notification failed"
     );
     Promise.resolve().then(() => (init_notifications(), notifications_exports)).then(
       ({ notify: notify2 }) => notify2("session-start", {
-        sessionId,
+        sessionId: sessionId2,
         projectPath: directory,
         profileName: process.env.OMC_NOTIFY_PROFILE
       }).catch(logSessionStartNotifyFailure)
     ).catch(logSessionStartNotifyFailure);
-    _openclaw.wake("session-start", { sessionId, projectPath: directory });
+    _openclaw.wake("session-start", { sessionId: sessionId2, projectPath: directory });
   }
-  if (sessionId) {
+  if (sessionId2) {
     Promise.all([
       Promise.resolve().then(() => (init_reply_listener(), reply_listener_exports)),
       Promise.resolve().then(() => (init_config(), config_exports))
@@ -72533,7 +72614,7 @@ async function processSessionStart(input) {
   } catch {
   }
   const autopilotState = readAutopilotState2(directory);
-  if (autopilotState?.active && autopilotState.session_id === sessionId) {
+  if (autopilotState?.active && autopilotState.session_id === sessionId2) {
     messages.push(`<session-restore>
 
 [AUTOPILOT MODE RESTORED]
@@ -72551,7 +72632,7 @@ Treat this as prior-session context only. Prioritize the user's newest request, 
 `);
   }
   const ultraworkState = readUltraworkState2(directory);
-  if (ultraworkState?.active && ultraworkState.session_id === sessionId) {
+  if (ultraworkState?.active && ultraworkState.session_id === sessionId2) {
     messages.push(`<session-restore>
 
 [ULTRAWORK MODE RESTORED]
@@ -72567,7 +72648,7 @@ Treat this as prior-session context only. Prioritize the user's newest request, 
 
 `);
   }
-  const teamState = readTeamStagedState(directory, sessionId);
+  const teamState = readTeamStagedState(directory, sessionId2);
   if (teamState?.active) {
     const teamName = teamState.team_name || teamState.teamName || "team";
     const stage = getTeamStage(teamState);
@@ -72634,7 +72715,7 @@ ${wrappedContent}
     } catch {
     }
   }
-  const todoResult = await checkIncompleteTodos2(sessionId, directory);
+  const todoResult = await checkIncompleteTodos2(sessionId2, directory);
   if (todoResult.count > 0) {
     messages.push(`<session-restore>
 
@@ -72672,7 +72753,7 @@ The CLAUDE.md instruction "Pass model on Task calls: haiku, sonnet, opus" does N
   }
   return { continue: true };
 }
-function dispatchAskUserQuestionNotification(sessionId, directory, toolInput) {
+function dispatchAskUserQuestionNotification(sessionId2, directory, toolInput) {
   const input = toolInput;
   const questions = input?.questions || [];
   const questionText = questions.map((q) => q.question || "").filter(Boolean).join("; ") || "User input requested";
@@ -72681,7 +72762,7 @@ function dispatchAskUserQuestionNotification(sessionId, directory, toolInput) {
   );
   Promise.resolve().then(() => (init_notifications(), notifications_exports)).then(
     ({ notify: notify2 }) => notify2("ask-user-question", {
-      sessionId,
+      sessionId: sessionId2,
       projectPath: directory,
       question: questionText,
       profileName: process.env.OMC_NOTIFY_PROFILE
@@ -77005,23 +77086,23 @@ function formatRalphthonStatus(prd) {
 var import_child_process30 = require("child_process");
 init_mode_state_io();
 var MODE_NAME = "ralphthon";
-function readRalphthonState(directory, sessionId) {
-  const state = readModeState(MODE_NAME, directory, sessionId);
-  if (state && sessionId && state.sessionId && state.sessionId !== sessionId) {
+function readRalphthonState(directory, sessionId2) {
+  const state = readModeState(MODE_NAME, directory, sessionId2);
+  if (state && sessionId2 && state.sessionId && state.sessionId !== sessionId2) {
     return null;
   }
   return state;
 }
-function writeRalphthonState(directory, state, sessionId) {
+function writeRalphthonState(directory, state, sessionId2) {
   return writeModeState(
     MODE_NAME,
     state,
     directory,
-    sessionId
+    sessionId2
   );
 }
-function clearRalphthonState(directory, sessionId) {
-  return clearModeStateFile(MODE_NAME, directory, sessionId);
+function clearRalphthonState(directory, sessionId2) {
+  return clearModeStateFile(MODE_NAME, directory, sessionId2);
 }
 function isPaneIdle(paneId) {
   try {
@@ -77068,11 +77149,11 @@ function detectLeaderIdle(paneId, state, config2) {
     durationMs
   };
 }
-function initOrchestrator(directory, tmuxSession, leaderPaneId, prdPath, sessionId, _config) {
+function initOrchestrator(directory, tmuxSession, leaderPaneId, prdPath, sessionId2, _config) {
   const state = {
     active: true,
     phase: "execution",
-    sessionId,
+    sessionId: sessionId2,
     projectPath: directory,
     prdPath,
     tmuxSession,
@@ -77083,11 +77164,11 @@ function initOrchestrator(directory, tmuxSession, leaderPaneId, prdPath, session
     tasksCompleted: 0,
     tasksSkipped: 0
   };
-  writeRalphthonState(directory, state, sessionId);
+  writeRalphthonState(directory, state, sessionId2);
   return state;
 }
-function getNextAction(directory, sessionId) {
-  const state = readRalphthonState(directory, sessionId);
+function getNextAction(directory, sessionId2) {
+  const state = readRalphthonState(directory, sessionId2);
   if (!state || !state.active) {
     return { action: "complete" };
   }
@@ -77137,22 +77218,22 @@ function getNextAction(directory, sessionId) {
       return { action: "wait" };
   }
 }
-function transitionPhase2(directory, newPhase, sessionId, onEvent) {
-  const state = readRalphthonState(directory, sessionId);
+function transitionPhase2(directory, newPhase, sessionId2, onEvent) {
+  const state = readRalphthonState(directory, sessionId2);
   if (!state) return false;
   const oldPhase = state.phase;
   state.phase = newPhase;
   if (newPhase === "complete") {
     state.active = false;
   }
-  const success = writeRalphthonState(directory, state, sessionId);
+  const success = writeRalphthonState(directory, state, sessionId2);
   if (success && onEvent) {
     onEvent({ type: "phase_transition", from: oldPhase, to: newPhase });
   }
   return success;
 }
-function startHardeningWave(directory, sessionId, onEvent) {
-  const state = readRalphthonState(directory, sessionId);
+function startHardeningWave(directory, sessionId2, onEvent) {
+  const state = readRalphthonState(directory, sessionId2);
   if (!state) return null;
   const prd = readRalphthonPrd(directory);
   if (!prd) return null;
@@ -77160,7 +77241,7 @@ function startHardeningWave(directory, sessionId, onEvent) {
     state.phase = "hardening";
   }
   state.currentWave += 1;
-  writeRalphthonState(directory, state, sessionId);
+  writeRalphthonState(directory, state, sessionId2);
   if (onEvent) {
     onEvent({ type: "hardening_wave_start", wave: state.currentWave });
   }
@@ -77169,19 +77250,19 @@ function startHardeningWave(directory, sessionId, onEvent) {
     prompt: formatHardeningGenerationPrompt(state.currentWave, prd)
   };
 }
-function orchestratorTick(directory, sessionId, onEvent) {
-  const state = readRalphthonState(directory, sessionId);
+function orchestratorTick(directory, sessionId2, onEvent) {
+  const state = readRalphthonState(directory, sessionId2);
   if (!state || !state.active) return false;
   const prd = readRalphthonPrd(directory);
   if (!prd) return false;
   if (!paneExists(state.leaderPaneId)) {
-    transitionPhase2(directory, "failed", sessionId, onEvent);
+    transitionPhase2(directory, "failed", sessionId2, onEvent);
     if (onEvent) {
       onEvent({ type: "error", message: "Leader pane no longer exists" });
     }
     return false;
   }
-  const next = getNextAction(directory, sessionId);
+  const next = getNextAction(directory, sessionId2);
   switch (next.action) {
     case "inject_task":
     case "inject_hardening": {
@@ -77193,7 +77274,7 @@ function orchestratorTick(directory, sessionId, onEvent) {
       if (sent) {
         state.lastPollAt = (/* @__PURE__ */ new Date()).toISOString();
         state.lastIdleDetectedAt = void 0;
-        writeRalphthonState(directory, state, sessionId);
+        writeRalphthonState(directory, state, sessionId2);
         if (onEvent) {
           onEvent({
             type: "task_injected",
@@ -77205,7 +77286,7 @@ function orchestratorTick(directory, sessionId, onEvent) {
       return sent;
     }
     case "generate_hardening": {
-      const wave = startHardeningWave(directory, sessionId, onEvent);
+      const wave = startHardeningWave(directory, sessionId2, onEvent);
       if (!wave) return false;
       if (!isPaneIdle(state.leaderPaneId)) {
         return false;
@@ -77213,7 +77294,7 @@ function orchestratorTick(directory, sessionId, onEvent) {
       return sendKeysToPane(state.leaderPaneId, wave.prompt);
     }
     case "complete": {
-      transitionPhase2(directory, "complete", sessionId, onEvent);
+      transitionPhase2(directory, "complete", sessionId2, onEvent);
       if (onEvent) {
         onEvent({
           type: "session_complete",
@@ -77228,8 +77309,8 @@ function orchestratorTick(directory, sessionId, onEvent) {
       return false;
   }
 }
-function startOrchestratorLoop(directory, sessionId, onEvent) {
-  const state = readRalphthonState(directory, sessionId);
+function startOrchestratorLoop(directory, sessionId2, onEvent) {
+  const state = readRalphthonState(directory, sessionId2);
   if (!state) {
     return { stop: () => {
     } };
@@ -77241,16 +77322,16 @@ function startOrchestratorLoop(directory, sessionId, onEvent) {
   let stopped = false;
   const tick = () => {
     if (stopped) return;
-    const currentState = readRalphthonState(directory, sessionId);
+    const currentState = readRalphthonState(directory, sessionId2);
     if (!currentState || !currentState.active) {
       stop();
       return;
     }
-    orchestratorTick(directory, sessionId, onEvent);
+    orchestratorTick(directory, sessionId2, onEvent);
   };
   const idleCheck = () => {
     if (stopped) return;
-    const currentState = readRalphthonState(directory, sessionId);
+    const currentState = readRalphthonState(directory, sessionId2);
     if (!currentState || !currentState.active) {
       stop();
       return;
@@ -77263,12 +77344,12 @@ function startOrchestratorLoop(directory, sessionId, onEvent) {
     if (isPaneIdle(currentState.leaderPaneId)) {
       if (!currentState.lastIdleDetectedAt) {
         currentState.lastIdleDetectedAt = (/* @__PURE__ */ new Date()).toISOString();
-        writeRalphthonState(directory, currentState, sessionId);
+        writeRalphthonState(directory, currentState, sessionId2);
       }
     } else {
       if (currentState.lastIdleDetectedAt) {
         currentState.lastIdleDetectedAt = void 0;
-        writeRalphthonState(directory, currentState, sessionId);
+        writeRalphthonState(directory, currentState, sessionId2);
       }
     }
     if (idleResult.idle) {
@@ -77555,7 +77636,7 @@ async function ralphthonCommand(args) {
     );
     process.exit(1);
   }
-  const sessionId = `ralphthon-${Date.now()}`;
+  const sessionId2 = `ralphthon-${Date.now()}`;
   const config2 = {
     maxWaves: options.maxWaves,
     pollIntervalMs: options.pollInterval * 1e3,
@@ -77585,16 +77666,16 @@ async function ralphthonCommand(args) {
       tmuxSession,
       leaderPane,
       getRalphthonPrdPath(cwd2),
-      sessionId,
+      sessionId2,
       config2
     );
     state.phase = "interview";
-    writeRalphthonState(cwd2, state, sessionId);
+    writeRalphthonState(cwd2, state, sessionId2);
     if (!sendKeysToPane(leaderPane, interviewPrompt)) {
       console.log(
         source_default.red("Failed to inject deep-interview prompt to leader pane.")
       );
-      clearRalphthonState(cwd2, sessionId);
+      clearRalphthonState(cwd2, sessionId2);
       process.exit(1);
     }
     console.log(source_default.gray("Waiting for PRD generation..."));
@@ -77616,7 +77697,7 @@ async function ralphthonCommand(args) {
     }
     if (waited >= maxWaitMs) {
       console.error(source_default.red("Timed out waiting for PRD generation."));
-      clearRalphthonState(cwd2, sessionId);
+      clearRalphthonState(cwd2, sessionId2);
       process.exit(1);
     }
   } else {
@@ -77636,17 +77717,17 @@ async function ralphthonCommand(args) {
       tmuxSession,
       leaderPane,
       getRalphthonPrdPath(cwd2),
-      sessionId,
+      sessionId2,
       config2
     );
   }
   console.log(source_default.cyan("\nPhase 2: Execution \u2014 ralph loop active"));
   const eventLogger = createEventLogger();
-  const { stop } = startOrchestratorLoop(cwd2, sessionId, eventLogger);
+  const { stop } = startOrchestratorLoop(cwd2, sessionId2, eventLogger);
   const shutdown = () => {
     console.log(source_default.yellow("\nStopping ralphthon orchestrator..."));
     stop();
-    clearRalphthonState(cwd2, sessionId);
+    clearRalphthonState(cwd2, sessionId2);
     process.exit(0);
   };
   process.on("SIGINT", shutdown);
@@ -78908,7 +78989,7 @@ async function preLaunch(_cwd, _sessionId) {
 function isPrintMode(args) {
   return args.some((arg) => arg === "--print" || arg === "-p");
 }
-function runClaude(cwd2, args, sessionId) {
+function runClaude(cwd2, args, sessionId2) {
   if (isPrintMode(args)) {
     runClaudeDirect(cwd2, args);
     return;
@@ -78919,7 +79000,7 @@ function runClaude(cwd2, args, sessionId) {
       runClaudeInsideTmux(cwd2, args);
       break;
     case "outside-tmux":
-      runClaudeOutsideTmux(cwd2, args, sessionId);
+      runClaudeOutsideTmux(cwd2, args, sessionId2);
       break;
     case "direct":
       runClaudeDirect(cwd2, args);
@@ -79032,16 +79113,16 @@ async function launchCommand(args) {
     process.exit(1);
   }
   const normalizedArgs = normalizeClaudeLaunchArgs(argsAfterWebhook);
-  const sessionId = `omc-${Date.now()}-${crypto.randomUUID().replace(/-/g, "").slice(0, 8)}`;
+  const sessionId2 = `omc-${Date.now()}-${crypto.randomUUID().replace(/-/g, "").slice(0, 8)}`;
   try {
-    await preLaunch(cwd2, sessionId);
+    await preLaunch(cwd2, sessionId2);
   } catch (err) {
     console.error(`[omc] preLaunch warning: ${err instanceof Error ? err.message : err}`);
   }
   try {
-    runClaude(cwd2, normalizedArgs, sessionId);
+    runClaude(cwd2, normalizedArgs, sessionId2);
   } finally {
-    await postLaunch(cwd2, sessionId);
+    await postLaunch(cwd2, sessionId2);
   }
 }
 
@@ -79104,9 +79185,9 @@ function launchInteropSession(cwd2 = process.cwd()) {
     console.error("Start tmux first: tmux new-session -s myproject");
     process.exit(1);
   }
-  const sessionId = `interop-${(0, import_crypto16.randomUUID)().split("-")[0]}`;
-  const _config = initInteropSession(sessionId, cwd2, hasCodex ? cwd2 : void 0);
-  console.log(`Initializing interop session: ${sessionId}`);
+  const sessionId2 = `interop-${(0, import_crypto16.randomUUID)().split("-")[0]}`;
+  const _config = initInteropSession(sessionId2, cwd2, hasCodex ? cwd2 : void 0);
+  console.log(`Initializing interop session: ${sessionId2}`);
   console.log(`Working directory: ${cwd2}`);
   console.log(`Config saved to: ${cwd2}/.omc/state/interop/config.json
 `);

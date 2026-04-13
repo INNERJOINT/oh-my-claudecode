@@ -36,7 +36,7 @@ For `local` installs inside a git repository, the script also seeds `.git/info/e
 
 **FALLBACK** if curl fails:
 Tell user to manually download from:
-https://raw.githubusercontent.com/Yeachan-Heo/oh-my-claudecode/main/docs/CLAUDE.md
+https://raw.githubusercontent.com/INNERJOINT/oh-my-claudecode/main/docs/CLAUDE.md
 
 **Note**: The downloaded CLAUDE.md includes Context Persistence instructions with `<remember>` tags for surviving conversation compaction.
 

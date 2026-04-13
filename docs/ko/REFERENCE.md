@@ -29,7 +29,7 @@ oh-my-claudecode의 전체 레퍼런스입니다. 빠른 시작은 메인 [READM
 
 ```bash
 # 1단계: 마켓플레이스 추가
-/plugin marketplace add https://github.com/Yeachan-Heo/oh-my-claudecode
+/plugin marketplace add https://github.com/INNERJOINT/oh-my-claudecode
 
 # 2단계: 플러그인 설치
 /plugin install oh-my-claudecode
@@ -696,7 +696,7 @@ oh-my-claudecode에는 백그라운드에서 업데이트를 확인하는 무음
 ### 제거
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Yeachan-Heo/oh-my-claudecode/main/scripts/uninstall.sh | bash
+curl -fsSL https://raw.githubusercontent.com/INNERJOINT/oh-my-claudecode/main/scripts/uninstall.sh | bash
 ```
 
 또는 수동으로:
