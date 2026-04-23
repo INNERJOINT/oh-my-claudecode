@@ -23,7 +23,7 @@ describe('session-start template guard for same-root parallel sessions (#1744)',
     rmSync(tempDir, { recursive: true, force: true });
   });
 
-  function runSessionStart(input: Record<string, unknown>) {
+  function runSessionStart(input: Record<string, unknown>, extraEnv: Record<string, string> = {}) {
     const raw = execFileSync(NODE, [SCRIPT_PATH], {
       input: JSON.stringify(input),
       encoding: 'utf-8',
@@ -31,6 +31,7 @@ describe('session-start template guard for same-root parallel sessions (#1744)',
         ...process.env,
         HOME: fakeHome,
         USERPROFILE: fakeHome,
+        ...extraEnv,
       },
       timeout: 15000,
     }).trim();
@@ -181,4 +182,32 @@ ${'- preserve this startup guidance\n'.repeat(400)}
     expect(context).not.toContain('[PARALLEL SESSION WARNING]');
     expect(context).not.toContain('[ULTRAWORK MODE RESTORED]');
   });
+
+  it('keeps model routing override under budget for non-standard providers', () => {
+    writeFileSync(
+      join(fakeProject, 'AGENTS.md'),
+      `# oh-my-claudecode - Intelligent Multi-Agent Orchestration
+
+<guidance_schema_contract>schema</guidance_schema_contract>
+
+<operating_principles>
+${'- oversized startup guidance\n'.repeat(700)}
+</operating_principles>`,
+    );
+
+    const output = runSessionStart({
+      hook_event_name: 'SessionStart',
+      session_id: 'session-bedrock-template',
+      cwd: fakeProject,
+    }, {
+      CLAUDE_CODE_USE_BEDROCK: '1',
+    });
+
+    const context = output.hookSpecificOutput?.additionalContext || '';
+    expect(output.continue).toBe(true);
+    expect(context).toContain('[MODEL ROUTING OVERRIDE');
+    expect(context).toContain('Do NOT pass the `model` parameter');
+    expect(context.length).toBeLessThanOrEqual(6000);
+  });
+
 });
