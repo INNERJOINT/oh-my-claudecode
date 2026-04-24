@@ -16,7 +16,6 @@
 import { existsSync, readFileSync, rmSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { execFileSync } from 'node:child_process';
-import { createHash } from 'node:crypto';
 import { atomicWriteJson, ensureDirWithMode, validateResolvedPath } from './fs-utils.js';
 import { sanitizeName } from './tmux-session.js';
 import { withFileLockSync } from '../lib/file-lock.js';
