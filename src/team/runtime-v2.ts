@@ -72,7 +72,7 @@ import {
   generatePromptModeStartupPrompt,
 } from './worker-bootstrap.js';
 import { queueInboxInstruction, type DispatchOutcome } from './mcp-comm.js';
-import { cleanupTeamWorktrees, ensureWorkerWorktree, normalizeTeamWorktreeMode, type TeamWorktreeMode } from './git-worktree.js';
+import { cleanupTeamWorktrees, ensureWorkerWorktree, installWorktreeRootAgents, normalizeTeamWorktreeMode, type TeamWorktreeMode } from './git-worktree.js';
 import { formatOmcCliInvocation } from '../utils/omc-cli-rendering.js';
 import { createSwallowedErrorLogger } from '../lib/swallowed-error.js';
 import type { CanonicalTeamRole, PluginConfig, RoleAssignment, TeamRoleAssignmentSpec } from '../shared/types.js';
@@ -874,7 +874,7 @@ export async function startTeamV2(config: StartTeamV2Config): Promise<TeamRuntim
     const wName = workerNames[i];
     const agentType = (agentTypes[i % agentTypes.length] ?? agentTypes[0] ?? 'claude') as CliAgentType;
     await ensureWorkerStateDir(sanitized, wName, leaderCwd);
-    await writeWorkerOverlay({
+    const overlayPath = await writeWorkerOverlay({
       teamName: sanitized, workerName: wName, agentType,
       tasks: config.tasks.map((t, idx) => ({
         id: String(idx + 1), subject: t.subject, description: t.description,
@@ -882,6 +882,10 @@ export async function startTeamV2(config: StartTeamV2Config): Promise<TeamRuntim
       cwd: leaderCwd,
       ...(config.rolePrompt ? { bootstrapInstructions: config.rolePrompt } : {}),
     });
+    const worktree = workerWorktrees.get(wName);
+    if (worktree) {
+      installWorktreeRootAgents(sanitized, wName, leaderCwd, worktree.path, await readFile(overlayPath, 'utf-8'));
+    }
   }
 
   // Create tmux session (leader only — workers spawned below)
