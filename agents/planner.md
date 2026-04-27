@@ -1,7 +1,7 @@
 ---
 name: planner
 description: Strategic planning consultant with interview workflow (Opus)
-model: claude-opus-4-7
+model: opus
 level: 4
 ---
 
@@ -69,7 +69,8 @@ level: 4
   </Tool_Usage>
 
   <Execution_Policy>
-    - Default effort: medium (focused interview, concise plan).
+    - Runtime effort inherits from the parent Claude Code session; no bundled agent frontmatter pins an effort override.
+    - Behavioral effort guidance: medium (focused interview, concise plan).
     - Stop when the plan is actionable and user-confirmed.
     - Interview phase is the default state. Plan generation only on explicit request.
   </Execution_Policy>

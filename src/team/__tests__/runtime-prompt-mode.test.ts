@@ -54,6 +54,22 @@ vi.mock('child_process', async (importOriginal) => {
     return { stdout: '', stderr: '' };
   };
 
+  function mockExec(cmd: string, cb: (err: Error | null, stdout: string, stderr: string) => void) {
+    if (cmd.includes('display-message') && cmd.includes('#{window_width}')) {
+      cb(null, '160\n', '');
+    } else {
+      cb(null, '', '');
+    }
+    return {} as never;
+  }
+
+  (mockExec as any)[utilPromisify.custom] = async (cmd: string) => {
+    if (cmd.includes('display-message') && cmd.includes('#{window_width}')) {
+      return { stdout: '160\n', stderr: '' };
+    }
+    return { stdout: '', stderr: '' };
+  };
+
   return {
     ...actual,
     spawnSync: vi.fn((cmd: string, args: string[] = []) => {
@@ -64,6 +80,7 @@ vi.mock('child_process', async (importOriginal) => {
       }
       return { status: 0, stdout: '', stderr: '' };
     }),
+    exec: mockExec,
     execFile: mockExecFile,
   };
 });
@@ -107,7 +124,7 @@ function setupTaskDir(cwd: string): void {
   mkdirSync(workerDir, { recursive: true });
 }
 
-describe('spawnWorkerForTask – prompt mode (Gemini & Codex)', () => {
+describe('spawnWorkerForTask – prompt mode and interactive worker launch', () => {
   let cwd: string;
 
   beforeEach(() => {
@@ -118,7 +135,7 @@ describe('spawnWorkerForTask – prompt mode (Gemini & Codex)', () => {
     setupTaskDir(cwd);
   });
 
-  it('gemini worker launch args include -i flag with inbox path', async () => {
+  it('gemini worker launch args include -p flag with inbox path', async () => {
     const runtime = makeRuntime(cwd, 'gemini');
 
     await spawnWorkerForTask(runtime, 'worker-1', 0);
@@ -130,11 +147,11 @@ describe('spawnWorkerForTask – prompt mode (Gemini & Codex)', () => {
     expect(launchCall).toBeDefined();
     const launchCmd = launchCall![launchCall!.length - 1];
 
-    // Should contain -i flag for interactive mode
-    expect(launchCmd).toContain("'-i'");
+    // Should contain -p flag for prompt mode
+    expect(launchCmd).toContain("'-p'");
     // Should contain the inbox path reference
     expect(launchCmd).toContain('.omc/state/team/test-team/workers/worker-1/inbox.md');
-    expect(launchCmd).toContain('start work now');
+    expect(launchCmd).toContain('execute now');
     expect(launchCmd).toContain('concrete progress');
 
     rmSync(cwd, { recursive: true, force: true });
@@ -171,41 +188,39 @@ describe('spawnWorkerForTask – prompt mode (Gemini & Codex)', () => {
     rmSync(cwd, { recursive: true, force: true });
   });
 
-  it('codex worker launch args include positional prompt (no -p flag)', async () => {
+  it('codex worker launch args start a persistent codex pane without prompt/exec subcommands', async () => {
     const runtime = makeRuntime(cwd, 'codex');
 
     await spawnWorkerForTask(runtime, 'worker-1', 0);
 
-    // Find the send-keys call that launches the worker (contains -l flag)
+    // Find the send-keys call that launches the worker (contains -l flag).
     const launchCall = tmuxCalls.args.find(
       args => args[0] === 'send-keys' && args.includes('-l')
     );
     expect(launchCall).toBeDefined();
     const launchCmd = launchCall![launchCall!.length - 1];
 
-    // Should NOT contain -i flag (codex uses positional argument, not a flag)
-    expect(launchCmd).not.toContain("'-i'");
-    // Should contain the inbox path as a positional argument
-    expect(launchCmd).toContain('.omc/state/team/test-team/workers/worker-1/inbox.md');
-    expect(launchCmd).toContain('start work now');
-    expect(launchCmd).toContain('concrete progress');
+    expect(launchCmd).toContain('/usr/local/bin/codex');
+    expect(launchCmd).toContain('--dangerously-bypass-approvals-and-sandbox');
+    expect(launchCmd).not.toContain("'exec'");
+    expect(launchCmd).not.toContain('.omc/state/team/test-team/workers/worker-1/inbox.md');
+    expect(launchCmd).not.toContain('execute now');
+    expect(launchCmd).not.toContain('concrete progress');
 
     rmSync(cwd, { recursive: true, force: true });
   });
 
-  it('codex worker skips interactive send-keys notification (uses prompt mode)', async () => {
+  it('codex worker uses the interactive inbox notification path like claude', async () => {
     const runtime = makeRuntime(cwd, 'codex');
 
     await spawnWorkerForTask(runtime, 'worker-1', 0);
 
-    // After the initial launch send-keys, there should be NO follow-up
-    // send-keys with "Read and execute" text (prompt-mode agents skip the
-    // interactive notification path).
     const sendKeysCalls = tmuxCalls.args.filter(
       args => args[0] === 'send-keys' && args.includes('-l')
     );
-    // Only one send-keys call: the launch command itself
-    expect(sendKeysCalls.length).toBe(1);
+    expect(sendKeysCalls.length).toBe(2);
+    const readInstructionCall = sendKeysCalls.find((args) => (args[args.length - 1] ?? '').includes('execute now'));
+    expect(readInstructionCall).toBeDefined();
 
     rmSync(cwd, { recursive: true, force: true });
   });
@@ -219,9 +234,10 @@ describe('spawnWorkerForTask – prompt mode (Gemini & Codex)', () => {
     expect(captureCalls.length).toBeGreaterThan(0);
 
     const readInstructionCalls = tmuxCalls.args.filter(
-      args => args[0] === 'send-keys' && args.includes('-l') && (args[args.length - 1] ?? '').includes('start work now')
+      args => args[0] === 'send-keys' && args.includes('-l') && (args[args.length - 1] ?? '').includes('execute now')
     );
     expect(readInstructionCalls.length).toBe(1);
+    expect(tmuxCalls.args).toContainEqual(['set-window-option', '-t', 'test-session:0', 'main-pane-width', '80']);
 
     rmSync(cwd, { recursive: true, force: true });
   });

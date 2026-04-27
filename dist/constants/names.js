@@ -28,7 +28,7 @@ export const TOOL_CATEGORIES = {
     GEMINI: 'gemini',
     SHARED_MEMORY: 'shared-memory',
     DEEPINIT: 'deepinit',
-    AOSP: 'aosp',
+    WIKI: 'wiki',
 };
 // Hook event names
 export const HOOK_EVENTS = {

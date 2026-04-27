@@ -18,6 +18,7 @@ import { getDefaultMcpServers, toSdkMcpFormat } from './mcp/servers.js';
 import { omcToolsServer, getOmcToolNames } from './mcp/omc-tools-server.js';
 import { createMagicKeywordProcessor, detectMagicKeywords } from './features/magic-keywords.js';
 import { continuationSystemPromptAddition } from './features/continuation-enforcement.js';
+import { appendSkininthegamebrosGuidance } from './agents/skininthegamebros-guidance.js';
 import { createBackgroundTaskManager, shouldRunInBackground as shouldRunInBackgroundFn } from './features/background-tasks.js';
 export { loadConfig, getAgentDefinitions, omcSystemPrompt };
 export { getDefaultMcpServers, toSdkMcpFormat } from './mcp/servers.js';
@@ -30,7 +31,7 @@ export {
 REPO_OWNER, REPO_NAME, GITHUB_API_URL, CLAUDE_CONFIG_DIR, VERSION_FILE, 
 // Auto-update functions
 getInstalledVersion, saveVersionMetadata, checkForUpdates, performUpdate, formatUpdateNotification, shouldCheckForUpdates, backgroundUpdateCheck, compareVersions } from './features/auto-update.js';
-export * from './shared/types.js';
+export * from './shared/index.js';
 // Hooks module exports
 export * from './hooks/index.js';
 // Features module exports (boulder-state, context-injector)
@@ -88,7 +89,7 @@ export function createOmcSession(options) {
         }
     }
     // Build system prompt
-    let systemPrompt = omcSystemPrompt;
+    let systemPrompt = appendSkininthegamebrosGuidance(omcSystemPrompt, 'system');
     // Add continuation enforcement
     if (config.features?.continuationEnforcement !== false) {
         systemPrompt += continuationSystemPromptAddition;
@@ -175,7 +176,7 @@ export function enhancePrompt(prompt, config) {
  * Get the system prompt for the orchestrator (for direct use)
  */
 export function getOmcSystemPrompt(options) {
-    let prompt = omcSystemPrompt;
+    let prompt = appendSkininthegamebrosGuidance(omcSystemPrompt, 'system');
     if (options?.includeContinuation !== false) {
         prompt += continuationSystemPromptAddition;
     }

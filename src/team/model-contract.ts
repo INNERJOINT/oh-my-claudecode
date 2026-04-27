@@ -3,8 +3,9 @@ import { isAbsolute, normalize, win32 as win32Path } from 'path';
 import { validateTeamName } from './team-name.js';
 import { normalizeToCcAlias } from '../features/delegation-enforcer.js';
 import { isBedrock, isVertexAI, isProviderSpecificModelId } from '../config/models.js';
+import { isExternalLLMDisabled } from '../lib/security-config.js';
 
-export type CliAgentType = 'claude' | 'codex' | 'gemini';
+export type CliAgentType = 'claude' | 'codex' | 'gemini' | 'cursor';
 
 export interface CliAgentContract {
   agentType: CliAgentType;
@@ -14,7 +15,7 @@ export interface CliAgentContract {
   parseOutput(rawOutput: string): string;
   /** Whether this agent supports a prompt/headless mode that bypasses TUI input */
   supportsPromptMode?: boolean;
-  /** CLI flag for prompt mode (e.g., '-i' for gemini) */
+  /** CLI flag for prompt mode (e.g., '-p' for gemini) */
   promptModeFlag?: string;
 }
 
@@ -29,6 +30,12 @@ export interface WorkerLaunchConfig {
    * Used by runtime preflight validation to ensure spawns are pinned.
    */
   resolvedBinaryPath?: string;
+  /**
+   * Optional path the worker writes its structured verdict JSON to
+   * (used by the CLI-worker output contract for critic/reviewer stages).
+   * Consumed by the worker-completion handler in runtime-v2.
+   */
+  output_file?: string;
 }
 
 /** @deprecated Backward-compat shim for older team API consumers. */
@@ -175,9 +182,10 @@ const CONTRACTS: Record<CliAgentType, CliAgentContract> = {
     agentType: 'codex',
     binary: 'codex',
     installInstructions: 'Install Codex CLI: npm install -g @openai/codex',
-    supportsPromptMode: true,
-    // Codex accepts prompt as a positional argument (no flag needed):
-    //   codex [OPTIONS] [PROMPT]
+    // Team workers must be persistent interactive panes. Do not use `codex exec`
+    // or positional prompt mode here; runtime dispatch writes inbox.md and nudges
+    // the live Codex TUI with `codex` as the worker process.
+    supportsPromptMode: false,
     buildLaunchArgs(model?: string, extraFlags: string[] = []): string[] {
       const args = ['--dangerously-bypass-approvals-and-sandbox'];
       if (model) args.push('--model', model);
@@ -207,11 +215,29 @@ const CONTRACTS: Record<CliAgentType, CliAgentContract> = {
     binary: 'gemini',
     installInstructions: 'Install Gemini CLI: npm install -g @google/gemini-cli',
     supportsPromptMode: true,
-    promptModeFlag: '-i',
+    promptModeFlag: '-p',
     buildLaunchArgs(model?: string, extraFlags: string[] = []): string[] {
       const args = ['--approval-mode', 'yolo'];
       if (model) args.push('--model', model);
       return [...args, ...extraFlags];
+    },
+    parseOutput(rawOutput: string): string {
+      return rawOutput.trim();
+    },
+  },
+  cursor: {
+    agentType: 'cursor',
+    binary: 'cursor-agent',
+    installInstructions: 'Install Cursor Agent CLI: see https://docs.cursor.com/cli',
+    // cursor-agent runs as an interactive REPL — no exit-on-complete prompt mode.
+    // Keep supportsPromptMode false so the verdict-file contract path
+    // (CONTRACT_ROLES + shouldInjectContract) skips this provider; cursor
+    // workers participate as executors only.
+    supportsPromptMode: false,
+    buildLaunchArgs(_model?: string, extraFlags: string[] = []): string[] {
+      // Minimal flags — cursor-agent owns its own session/auth state.
+      // The model is selected interactively inside cursor-agent itself.
+      return [...extraFlags];
     },
     parseOutput(rawOutput: string): string {
       return rawOutput.trim();
@@ -223,6 +249,12 @@ export function getContract(agentType: CliAgentType): CliAgentContract {
   const contract = CONTRACTS[agentType];
   if (!contract) {
     throw new Error(`Unknown agent type: ${agentType}. Supported: ${Object.keys(CONTRACTS).join(', ')}`);
+  }
+  if (agentType !== 'claude' && isExternalLLMDisabled()) {
+    throw new Error(
+      `External LLM provider "${agentType}" is blocked by security policy (disableExternalLLM). ` +
+      `Only Claude workers are allowed in the current security configuration.`
+    );
   }
   return contract;
 }
@@ -387,6 +419,12 @@ export function isPromptModeAgent(agentType: CliAgentType): boolean {
 export function resolveClaudeWorkerModel(
   env: NodeJS.ProcessEnv = process.env,
 ): string | undefined {
+  // When force-inherit routing is enabled, do not resolve/override worker model.
+  // This preserves parent model inheritance and avoids alias normalization drift.
+  if (env.OMC_ROUTING_FORCE_INHERIT === 'true') {
+    return undefined;
+  }
+
   // Only needed for non-standard providers
   if (!isBedrock() && !isVertexAI()) {
     return undefined;
@@ -425,7 +463,7 @@ export function getPromptModeArgs(agentType: CliAgentType, instruction: string):
   if (!contract.supportsPromptMode) {
     return [];
   }
-  // If a flag is defined (e.g. gemini's '-i'), prepend it; otherwise the
+  // If a flag is defined (e.g. gemini's '-p'), prepend it; otherwise the
   // instruction is passed as a positional argument (e.g. codex [PROMPT]).
   if (contract.promptModeFlag) {
     return [contract.promptModeFlag, instruction];

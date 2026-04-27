@@ -4,14 +4,30 @@
  * Type definitions for the HUD state, configuration, and rendering.
  */
 import { DEFAULT_MISSION_BOARD_CONFIG } from './mission-board.js';
+/**
+ * Default element order matching the current hardcoded order in render.ts.
+ * Used as fallback when no layout is configured.
+ */
+export const DEFAULT_ELEMENT_ORDER = {
+    line1: ['hostname', 'cwd', 'gitRepo', 'gitBranch', 'gitStatus', 'model', 'apiKeySource', 'profile'],
+    main: [
+        'omcLabel', 'enterpriseCost', 'rateLimits', 'customBuckets', 'permission', 'thinking',
+        'promptTime', 'session', 'tokens', 'ralph', 'autopilot', 'prd',
+        'skills', 'lastSkill', 'contextBar', 'agents', 'background',
+        'callCounts', 'lastTool', 'sessionSummary',
+    ],
+    detail: ['missionBoard', 'agents', 'contextWarning', 'todos'],
+};
 export const DEFAULT_HUD_USAGE_POLL_INTERVAL_MS = 90 * 1000;
 export const DEFAULT_HUD_CONFIG = {
     preset: 'focused',
     elements: {
         cwd: false, // Disabled by default for backward compatibility
         cwdFormat: 'relative',
+        useHyperlinks: false,
         gitRepo: false, // Disabled by default for backward compatibility
         gitBranch: false, // Disabled by default for backward compatibility
+        gitStatus: false, // Disabled by default for backward compatibility
         gitInfoPosition: 'above', // Git info above main HUD line (backward compatible)
         model: false, // Disabled by default for backward compatibility
         modelFormat: 'short', // Short names by default for backward compatibility
@@ -32,6 +48,7 @@ export const DEFAULT_HUD_CONFIG = {
         thinking: true,
         thinkingFormat: 'text', // Text format for backward compatibility
         apiKeySource: false, // Disabled by default
+        hostname: false,
         profile: true, // Show profile name when CLAUDE_CONFIG_DIR is set
         missionBoard: false, // Opt-in mission board for whole-run progress tracking
         promptTime: true, // Show last prompt time by default
@@ -41,6 +58,8 @@ export const DEFAULT_HUD_CONFIG = {
         showTokens: false,
         useBars: false, // Disabled by default for backwards compatibility
         showCallCounts: true, // Show tool/agent/skill call counts by default (Issue #710)
+        callCountsFormat: 'auto', // Preserve platform-based emoji/ASCII defaults unless explicitly overridden
+        showLastTool: false,
         sessionSummary: false, // Disabled by default - opt-in AI-generated session summary
         maxOutputLines: 4,
         safeMode: true, // Enabled by default to prevent terminal rendering corruption (Issue #346)
@@ -51,7 +70,7 @@ export const DEFAULT_HUD_CONFIG = {
         contextCritical: 85,
         ralphWarning: 7,
     },
-    staleTaskThresholdMinutes: 30,
+    staleTaskThresholdMinutes: 10,
     contextLimitWarning: {
         threshold: 80,
         autoCompact: false,
@@ -64,8 +83,10 @@ export const PRESET_CONFIGS = {
     minimal: {
         cwd: false,
         cwdFormat: 'folder',
+        useHyperlinks: false,
         gitRepo: false,
         gitBranch: false,
+        gitStatus: false,
         gitInfoPosition: 'above',
         model: false,
         modelFormat: 'short',
@@ -86,6 +107,7 @@ export const PRESET_CONFIGS = {
         thinking: false,
         thinkingFormat: 'text',
         apiKeySource: false,
+        hostname: false,
         profile: true,
         missionBoard: false,
         promptTime: false,
@@ -95,6 +117,7 @@ export const PRESET_CONFIGS = {
         showTokens: false,
         useBars: false,
         showCallCounts: false,
+        showLastTool: false,
         sessionSummary: false,
         maxOutputLines: 2,
         safeMode: true,
@@ -102,8 +125,10 @@ export const PRESET_CONFIGS = {
     focused: {
         cwd: false,
         cwdFormat: 'relative',
+        useHyperlinks: false,
         gitRepo: false,
         gitBranch: true,
+        gitStatus: true,
         gitInfoPosition: 'above',
         model: false,
         modelFormat: 'short',
@@ -124,6 +149,7 @@ export const PRESET_CONFIGS = {
         thinking: true,
         thinkingFormat: 'text',
         apiKeySource: false,
+        hostname: false,
         profile: true,
         missionBoard: false,
         promptTime: true,
@@ -133,6 +159,7 @@ export const PRESET_CONFIGS = {
         showTokens: false,
         useBars: true,
         showCallCounts: true,
+        showLastTool: false,
         sessionSummary: false, // Opt-in: sends transcript to claude -p
         maxOutputLines: 4,
         safeMode: true,
@@ -140,8 +167,10 @@ export const PRESET_CONFIGS = {
     full: {
         cwd: false,
         cwdFormat: 'relative',
+        useHyperlinks: false,
         gitRepo: true,
         gitBranch: true,
+        gitStatus: true,
         gitInfoPosition: 'above',
         model: false,
         modelFormat: 'short',
@@ -162,6 +191,7 @@ export const PRESET_CONFIGS = {
         thinking: true,
         thinkingFormat: 'text',
         apiKeySource: true,
+        hostname: false,
         profile: true,
         missionBoard: false,
         promptTime: true,
@@ -171,6 +201,7 @@ export const PRESET_CONFIGS = {
         showTokens: false,
         useBars: true,
         showCallCounts: true,
+        showLastTool: false,
         sessionSummary: false, // Opt-in: sends transcript to claude -p
         maxOutputLines: 12,
         safeMode: true,
@@ -178,8 +209,10 @@ export const PRESET_CONFIGS = {
     opencode: {
         cwd: false,
         cwdFormat: 'relative',
+        useHyperlinks: false,
         gitRepo: false,
         gitBranch: true,
+        gitStatus: false,
         gitInfoPosition: 'above',
         model: false,
         modelFormat: 'short',
@@ -200,6 +233,7 @@ export const PRESET_CONFIGS = {
         thinking: true,
         thinkingFormat: 'text',
         apiKeySource: false,
+        hostname: false,
         profile: true,
         missionBoard: false,
         promptTime: true,
@@ -209,6 +243,7 @@ export const PRESET_CONFIGS = {
         showTokens: false,
         useBars: false,
         showCallCounts: true,
+        showLastTool: false,
         sessionSummary: false,
         maxOutputLines: 4,
         safeMode: true,
@@ -216,8 +251,10 @@ export const PRESET_CONFIGS = {
     dense: {
         cwd: false,
         cwdFormat: 'relative',
+        useHyperlinks: false,
         gitRepo: true,
         gitBranch: true,
+        gitStatus: true,
         gitInfoPosition: 'above',
         model: false,
         modelFormat: 'short',
@@ -238,6 +275,7 @@ export const PRESET_CONFIGS = {
         thinking: true,
         thinkingFormat: 'text',
         apiKeySource: true,
+        hostname: false,
         profile: true,
         missionBoard: false,
         promptTime: true,
@@ -247,6 +285,7 @@ export const PRESET_CONFIGS = {
         showTokens: false,
         useBars: true,
         showCallCounts: true,
+        showLastTool: false,
         sessionSummary: false, // Opt-in: sends transcript to claude -p
         maxOutputLines: 6,
         safeMode: true,

@@ -1,7 +1,7 @@
 ---
 name: code-reviewer
 description: Expert code review specialist with severity-rated feedback, logic defect detection, SOLID principle checks, style, performance, and quality strategy
-model: claude-opus-4-7
+model: opus
 level: 3
 disallowedTools: Write, Edit
 ---
@@ -69,7 +69,8 @@ disallowedTools: Write, Edit
   </Tool_Usage>
 
   <Execution_Policy>
-    - Default effort: high (thorough two-stage review).
+    - Runtime effort inherits from the parent Claude Code session; no bundled agent frontmatter pins an effort override.
+    - Behavioral effort guidance: high (thorough two-stage review).
     - For trivial changes: brief quality check only.
     - Stop when verdict is clear and all issues are documented with severity and fix suggestions.
   </Execution_Policy>

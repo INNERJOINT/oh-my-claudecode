@@ -13,7 +13,7 @@
 
 _Lernen Sie nicht Claude Code. Nutzen Sie einfach OMC._
 
-[Loslegen](#schnellstart) • [Dokumentation](https://yeachan-heo.github.io/oh-my-claudecode-website) • [Migrationsleitfaden](docs/MIGRATION.md)
+[Loslegen](#schnellstart) • [Dokumentation](https://yeachan-heo.github.io/oh-my-claudecode-website) • [Migrationsleitfaden](docs/MIGRATION.md) • [Discord](https://discord.gg/PUwSMR9XNk)
 
 ---
 
@@ -31,6 +31,10 @@ _Lernen Sie nicht Claude Code. Nutzen Sie einfach OMC._
 ```bash
 /oh-my-claudecode:omc-setup
 ```
+
+Wenn Sie OMC über `omc --plugin-dir <path>` oder `claude --plugin-dir <path>` ausführen, fügen Sie `--plugin-dir-mode` zu `omc setup` hinzu (oder exportieren Sie `OMC_PLUGIN_ROOT` vorher), um zu vermeiden, dass Fähigkeiten/Agenten dupliziert werden, die das Plugin bereits zur Laufzeit bereitstellt. Siehe [Plugin directory flags Abschnitt in REFERENCE.md](./docs/REFERENCE.md#plugin-directory-flags) für eine vollständige Entscheidungsmatrix und alle verfügbaren Flags.
+
+<!-- TODO(i18n): verify translation -->
 
 **Schritt 3: Etwas bauen**
 
@@ -107,7 +111,7 @@ Bei Problemen nach der Aktualisierung leeren Sie den alten Plugin-Cache:
 
 ### Orchestrierungsmodi
 
-Mehrere Strategien für verschiedene Anwendungsfälle — von Team-gestützter Orchestrierung bis token-effizientem Refactoring. [Mehr erfahren →](https://yeachan-heo.github.io/oh-my-claudecode-website/docs.html#execution-modes)
+Mehrere Strategien für verschiedene Anwendungsfälle — von Team-gestützter Orchestrierung bis token-effizientem Refactoring. [Mehr erfahren →](https://yeachan-heo.github.io/oh-my-claudecode-website/docs/#execution-modes)
 
 | Modus                             | Beschreibung                                                                               | Verwendung                                                                           |
 | --------------------------------- | ------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------ |
@@ -129,8 +133,17 @@ Mehrere Strategien für verschiedene Anwendungsfälle — von Team-gestützter O
 
 - **Magische Schlüsselwörter** — `ralph`, `ulw`, `eco`, `plan` für explizite Steuerung
 - **HUD statusline** — Echtzeit-Orchestrierungsmetriken in Ihrer Statusleiste
+  - Wenn Sie Claude Code direkt mit `claude --plugin-dir <path>` starten (Umgehen des `omc` Shim), exportieren Sie `OMC_PLUGIN_ROOT=<path>` in Ihrer Shell, damit die HUD-Sammlung zu demselben Checkout wie der Plugin-Loader aufgelöst wird. Siehe [Plugin directory flags Abschnitt in REFERENCE.md](./docs/REFERENCE.md#plugin-directory-flags) für Details.
+
+  <!-- TODO(i18n): verify translation -->
 - **Skill-Lernen** — Wiederverwendbare Muster aus Ihren Sitzungen extrahieren
 - **Analytik & Kostenverfolgung** — Token-Nutzung über alle Sitzungen verstehen
+
+### Beitragen
+
+Möchten Sie zu OMC beitragen? Siehe [CONTRIBUTING.md](./CONTRIBUTING.md) für den vollständigen Entwicklerleitfaden, einschließlich Forking, Einrichten eines lokalen Checkouts, Verlinken als aktives Plugin, Ausführen von Tests und Einreichen von PRs.
+
+<!-- TODO(i18n): verify translation -->
 
 ### Benutzerdefinierte Skills
 

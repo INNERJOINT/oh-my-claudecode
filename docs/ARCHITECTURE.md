@@ -439,6 +439,7 @@ OMC stores task progress and project knowledge in the `.omc/` directory. The sta
 │   ├── autopilot-state.json  # autopilot progress
 │   ├── ralph-state.json      # ralph loop state
 │   ├── team/                 # team task state
+│   ├── interop/              # cross-tool task/message envelopes
 │   └── sessions/             # per-session state
 │       └── {sessionId}/
 ├── notepad.md                # Compaction-resistant memo pad
@@ -450,16 +451,50 @@ OMC stores task progress and project knowledge in the `.omc/` directory. The sta
 │       ├── decisions.md
 │       ├── issues.md
 │       └── problems.md
+├── prompts/                  # persisted prompt/response artifacts
 ├── autopilot/                # autopilot artifacts
 │   └── spec.md
 ├── research/                 # Research results
 └── logs/                     # Execution logs
 ```
 
+### Control Plane vs Data Plane
+
+OMC keeps orchestration metadata separate from large durable artifacts:
+
+- **Control plane**: queue state, worker assignment, session state, and cross-tool task/message envelopes under `.omc/state/**`.
+- **Data plane**: plans, specs, prompts, results, traces, and other durable artifacts under paths such as `.omc/plans/`, `.omc/notepads/`, `.omc/prompts/`, and `.omc/state/interop/artifacts/**`.
+- **Concrete handoff examples**:
+  - shared interop state keeps task/message metadata inline while storing oversized task descriptions, task results, and message bodies under `.omc/state/interop/artifacts/**`
+  - prompt persistence stores durable prompt/response files under `.omc/prompts/**` and records descriptor metadata alongside job status
+
 **Global State:**
 - `~/.omc/state/{name}.json` — user preferences and global config
 
 Legacy locations are auto-migrated on read.
+
+This separation keeps schedulers and status checks small while allowing richer artifacts to remain durable and inspectable.
+
+### Artifact Descriptors and Bounded Handoffs
+
+When a handoff needs to reference a large artifact, prefer a descriptor/handle over pasting the full payload inline. The canonical descriptor shape is:
+
+| Field | Purpose |
+|------|---------|
+| `kind` | Artifact category (plan, prompt, result, trace, etc.) |
+| `path` | Durable path to the artifact |
+| `contentHash?` | Optional integrity/checksum hint when available |
+| `createdAt` | Creation timestamp |
+| `producer` | Owning tool, skill, or worker |
+| `sizeBytes?` | Optional payload size for threshold decisions |
+| `retention` | Lifecycle hint for cleanup/ownership |
+| `expiresAt?` | Optional expiry for short-lived artifacts |
+
+**Bounded handoff rule:**
+
+1. Keep small payloads inline when the call site's explicit threshold allows it.
+2. Switch to a descriptor + short human-readable summary when the payload would bloat control-plane state.
+3. Preserve ownership/retention metadata with the descriptor so later cleanup and audits remain deterministic.
 
 ### Notepad
 

@@ -21,17 +21,26 @@ export function resolveOmcCliPrefix(options = {}) {
     }
     return OMC_CLI_BINARY;
 }
+function resolveInvocationPrefix(commandSuffix, options = {}) {
+    void commandSuffix;
+    return resolveOmcCliPrefix(options);
+}
 export function formatOmcCliInvocation(commandSuffix, options = {}) {
     const suffix = commandSuffix.trim().replace(/^omc\s+/, '');
-    return `${resolveOmcCliPrefix(options)} ${suffix}`.trim();
+    return `${resolveInvocationPrefix(suffix, options)} ${suffix}`.trim();
 }
 export function rewriteOmcCliInvocations(text, options = {}) {
-    const prefix = resolveOmcCliPrefix(options);
-    if (prefix === OMC_CLI_BINARY || !text.includes('omc ')) {
+    if (!text.includes('omc ')) {
         return text;
     }
     return text
-        .replace(/`omc (?=[^`\r\n]+`)/g, `\`${prefix} `)
-        .replace(/(^|\n)([ \t>*-]*)omc (?=\S)/g, `$1$2${prefix} `);
+        .replace(/`omc ([^`\r\n]+)`/g, (_match, suffix) => {
+        const prefix = resolveInvocationPrefix(suffix, options);
+        return `\`${prefix} ${suffix}\``;
+    })
+        .replace(/(^|\n)([ \t>*-]*)omc ([^\n]+)/g, (_match, lineStart, leader, suffix) => {
+        const prefix = resolveInvocationPrefix(suffix, options);
+        return `${lineStart}${leader}${prefix} ${suffix}`;
+    });
 }
 //# sourceMappingURL=omc-cli-rendering.js.map

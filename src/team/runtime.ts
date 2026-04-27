@@ -1,12 +1,13 @@
 import { mkdir, writeFile, readFile, rm, rename } from 'fs/promises';
 import { join } from 'path';
 import { existsSync } from 'fs';
+import { tmuxExecAsync } from '../cli/tmux-utils.js';
 import type { CliAgentType } from './model-contract.js';
 import { buildWorkerArgv, resolveValidatedBinaryPath, getWorkerEnv as getModelWorkerEnv, isPromptModeAgent, getPromptModeArgs, resolveClaudeWorkerModel } from './model-contract.js';
 import { validateTeamName } from './team-name.js';
 import {
   createTeamSession, spawnWorkerInPane, sendToWorker,
-  isWorkerAlive, killTeamSession, resolveSplitPaneWorkerPaneIds, waitForPaneReady,
+  isWorkerAlive, killTeamSession, resolveSplitPaneWorkerPaneIds, waitForPaneReady, applyMainVerticalLayout,
   type TeamSession, type WorkerPaneConfig,
 } from './tmux-session.js';
 import {
@@ -682,15 +683,11 @@ export async function spawnWorkerForTask(
   const marked = await markTaskInProgress(root, taskId, workerNameValue, runtime.teamName, runtime.cwd);
   if (!marked) return '';
 
-  const { execFile } = await import('child_process');
-  const { promisify } = await import('util');
-  const execFileAsync = promisify(execFile);
-
   const splitTarget = runtime.workerPaneIds.length === 0
     ? runtime.leaderPaneId
     : runtime.workerPaneIds[runtime.workerPaneIds.length - 1];
   const splitType = runtime.workerPaneIds.length === 0 ? '-h' : '-v';
-  const splitResult = await execFileAsync('tmux', [
+  const splitResult = await tmuxExecAsync([
     'split-window', splitType, '-t', splitTarget,
     '-d', '-P', '-F', '#{pane_id}',
     '-c', runtime.cwd,
@@ -752,6 +749,8 @@ export async function spawnWorkerForTask(
 
   // For prompt-mode agents (e.g. Gemini Ink TUI), pass instruction via CLI
   // flag so tmux send-keys never needs to interact with the TUI input widget.
+  // Codex and Claude team workers are persistent interactive panes and are
+  // nudged through the inbox transport instead of `codex exec`/print modes.
   if (usePromptMode) {
     const promptArgs = getPromptModeArgs(agentType, generateTriggerMessage(runtime.teamName, workerNameValue));
     launchArgs.push(...promptArgs);
@@ -771,11 +770,7 @@ export async function spawnWorkerForTask(
   runtime.workerPaneIds.push(paneId);
   runtime.activeWorkers.set(workerNameValue, { paneId, taskId, spawnedAt: Date.now() });
 
-  try {
-    await execFileAsync('tmux', ['select-layout', '-t', runtime.sessionName, 'main-vertical']);
-  } catch {
-    // layout update is best-effort
-  }
+  await applyMainVerticalLayout(runtime.sessionName);
 
   try {
     await writePanesTrackingFileIfPresent(runtime);
@@ -829,10 +824,7 @@ export async function killWorkerPane(
   paneId: string
 ): Promise<void> {
   try {
-    const { execFile } = await import('child_process');
-    const { promisify } = await import('util');
-    const execFileAsync = promisify(execFile);
-    await execFileAsync('tmux', ['kill-pane', '-t', paneId]);
+    await tmuxExecAsync(['kill-pane', '-t', paneId]);
   } catch {
     // idempotent: pane may already be gone
   }
@@ -990,19 +982,16 @@ export async function resumeTeam(teamName: string, cwd: string): Promise<TeamRun
   if (!configData) return null;
 
   // Check if session is alive
-  const { execFile } = await import('child_process');
-  const { promisify } = await import('util');
-  const execFileAsync = promisify(execFile);
   const sName = configData.tmuxSession || `omc-team-${teamName}`;
 
   try {
-    await execFileAsync('tmux', ['has-session', '-t', sName.split(':')[0]]);
+    await tmuxExecAsync(['has-session', '-t', sName.split(':')[0]]);
   } catch {
     return null; // Session not alive
   }
 
   const paneTarget = sName.includes(':') ? sName : sName.split(':')[0];
-  const panesResult = await execFileAsync('tmux', [
+  const panesResult = await tmuxExecAsync([
     'list-panes', '-t', paneTarget, '-F', '#{pane_id}'
   ]);
   const allPanes = panesResult.stdout.trim().split('\n').filter(Boolean);

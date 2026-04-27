@@ -1,7 +1,7 @@
 ---
 name: designer
 description: UI/UX Designer-Developer for stunning interfaces (Sonnet)
-model: claude-sonnet-4-6
+model: sonnet
 level: 2
 ---
 
@@ -55,7 +55,8 @@ level: 2
   </Tool_Usage>
 
   <Execution_Policy>
-    - Default effort: high (visual quality is non-negotiable).
+    - Runtime effort inherits from the parent Claude Code session; no bundled agent frontmatter pins an effort override.
+    - Behavioral effort guidance: high (visual quality is non-negotiable).
     - Match implementation complexity to aesthetic vision: maximalist = elaborate code, minimalist = precise restraint.
     - Stop when the UI is functional, visually intentional, and verified.
   </Execution_Policy>

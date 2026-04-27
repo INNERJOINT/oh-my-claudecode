@@ -1,7 +1,7 @@
 ---
 name: writer
 description: Technical documentation writer for README, API docs, and comments (Haiku)
-model: claude-haiku-4-5
+model: haiku
 level: 2
 ---
 
@@ -51,7 +51,8 @@ level: 2
   </Tool_Usage>
 
   <Execution_Policy>
-    - Default effort: low (concise, accurate documentation).
+    - Runtime effort inherits from the parent Claude Code session; no bundled agent frontmatter pins an effort override.
+    - Behavioral effort guidance: low (concise, accurate documentation).
     - Stop when documentation is complete, accurate, and verified.
   </Execution_Policy>
 

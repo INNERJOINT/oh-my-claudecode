@@ -9,28 +9,40 @@
  */
 
 import { describe, expect, it, vi, afterEach } from 'vitest';
-import { execFileSync } from 'child_process';
+import { execFileSync, spawnSync } from 'child_process';
 
 vi.mock('child_process', async (importOriginal) => {
   const actual = await importOriginal<typeof import('child_process')>();
   return {
     ...actual,
     execFileSync: vi.fn(),
+    spawnSync: vi.fn(),
   };
 });
 
 import {
+  buildTmuxShellCommand,
+  buildTmuxShellCommandWithEnv,
+  createHudWatchPane,
+  isClaudeAvailable,
+  killTmuxPane,
+  listHudWatchPaneIdsInCurrentWindow,
   resolveLaunchPolicy,
+  tmuxExec,
+  tmuxSpawn,
   wrapWithLoginShell,
   quoteShellArg,
   sanitizeTmuxToken,
 } from '../tmux-utils.js';
 
 const mockedExecFileSync = vi.mocked(execFileSync);
+const mockedSpawnSync = vi.mocked(spawnSync);
+const baselinePlatform = process.platform;
 
 afterEach(() => {
   vi.unstubAllEnvs();
   vi.restoreAllMocks();
+  Object.defineProperty(process, 'platform', { value: baselinePlatform, configurable: true });
 });
 
 // ---------------------------------------------------------------------------
@@ -60,6 +72,13 @@ describe('resolveLaunchPolicy', () => {
     expect(resolveLaunchPolicy({ CMUX_SURFACE_ID: 'C0D4B400-6C27-4957-BD01-32735B2251CD' })).toBe('direct');
   });
 
+  it('keeps inside-tmux authoritative even when tmux availability probing fails', () => {
+    mockedExecFileSync.mockImplementation(() => {
+      throw new Error('tmux not found');
+    });
+    expect(resolveLaunchPolicy({ TMUX: '/tmp/tmux-501/default,1234,0' })).toBe('inside-tmux');
+  });
+
   it('prefers inside-tmux over cmux when both TMUX and CMUX_SURFACE_ID are set', () => {
     mockedExecFileSync.mockReturnValue('tmux 3.6a' as any);
     expect(resolveLaunchPolicy({
@@ -79,12 +98,208 @@ describe('resolveLaunchPolicy', () => {
     });
     expect(resolveLaunchPolicy({})).toBe('direct');
   });
+
+  it('detects tmux.cmd via COMSPEC on win32', () => {
+    const originalPlatform = process.platform;
+    Object.defineProperty(process, 'platform', { value: 'win32', configurable: true });
+    vi.stubEnv('COMSPEC', 'C:\\Windows\\System32\\cmd.exe');
+    mockedSpawnSync
+      .mockReturnValueOnce({
+        status: 0,
+        stdout: 'C:\\Program Files\\psmux\\tmux.cmd\r\n',
+        stderr: '',
+        pid: 0,
+        output: [],
+        signal: null,
+      } as ReturnType<typeof spawnSync>)
+      .mockReturnValueOnce({
+        status: 0,
+        stdout: '',
+        stderr: '',
+        pid: 0,
+        output: [],
+        signal: null,
+      } as ReturnType<typeof spawnSync>);
+
+    expect(resolveLaunchPolicy({})).toBe('outside-tmux');
+    expect(mockedSpawnSync).toHaveBeenNthCalledWith(1, 'where', ['tmux'], { timeout: 5000, encoding: 'utf8' });
+    expect(mockedSpawnSync).toHaveBeenNthCalledWith(
+      2,
+      'C:\\Windows\\System32\\cmd.exe',
+      ['/d', '/s', '/c', '"C:\\Program Files\\psmux\\tmux.cmd" -V'],
+      { timeout: 5000 }
+    );
+
+    Object.defineProperty(process, 'platform', { value: originalPlatform, configurable: true });
+  });
+});
+
+describe('isClaudeAvailable', () => {
+  it('uses shell:true on win32 so npm .cmd wrappers resolve', () => {
+    const originalPlatform = process.platform;
+    Object.defineProperty(process, 'platform', { value: 'win32', configurable: true });
+    mockedExecFileSync.mockReturnValue(Buffer.from('2.1.116'));
+
+    expect(isClaudeAvailable()).toBe(true);
+    expect(mockedExecFileSync).toHaveBeenCalledWith('claude', ['--version'], {
+      stdio: 'ignore',
+      shell: true,
+    });
+
+    Object.defineProperty(process, 'platform', { value: originalPlatform, configurable: true });
+  });
+});
+
+describe('tmux command execution parity on Windows', () => {
+  it('routes tmuxExec through COMSPEC when where resolves tmux.cmd', () => {
+    const originalPlatform = process.platform;
+    Object.defineProperty(process, 'platform', { value: 'win32', configurable: true });
+    vi.stubEnv('COMSPEC', 'C:\\Windows\\System32\\cmd.exe');
+
+    mockedSpawnSync.mockClear();
+    mockedExecFileSync.mockClear();
+    mockedSpawnSync.mockReturnValueOnce({
+      status: 0,
+      stdout: 'C:\\Program Files\\psmux\\tmux.cmd\r\n',
+      stderr: '',
+      pid: 0,
+      output: [],
+      signal: null,
+    } as ReturnType<typeof spawnSync>);
+    mockedExecFileSync.mockReturnValue('ok' as any);
+
+    tmuxExec(['list-sessions']);
+
+    expect(mockedExecFileSync).toHaveBeenLastCalledWith(
+      'C:\\Windows\\System32\\cmd.exe',
+      ['/d', '/s', '/c', '"C:\\Program Files\\psmux\\tmux.cmd" list-sessions'],
+      expect.objectContaining({ encoding: 'utf-8' }),
+    );
+
+    Object.defineProperty(process, 'platform', { value: originalPlatform, configurable: true });
+  });
+
+  it('routes tmuxSpawn through COMSPEC when where resolves tmux.cmd', () => {
+    const originalPlatform = process.platform;
+    Object.defineProperty(process, 'platform', { value: 'win32', configurable: true });
+    vi.stubEnv('COMSPEC', 'C:\\Windows\\System32\\cmd.exe');
+
+    mockedSpawnSync.mockClear();
+    mockedSpawnSync
+      .mockReturnValueOnce({
+        status: 0,
+        stdout: 'C:\\Program Files\\psmux\\tmux.cmd\r\n',
+        stderr: '',
+        pid: 0,
+        output: [],
+        signal: null,
+      } as ReturnType<typeof spawnSync>)
+      .mockReturnValueOnce({
+        status: 0,
+        stdout: '',
+        stderr: '',
+        pid: 0,
+        output: [],
+        signal: null,
+      } as ReturnType<typeof spawnSync>);
+
+    tmuxSpawn(['list-panes']);
+
+    expect(mockedSpawnSync).toHaveBeenLastCalledWith(
+      'C:\\Windows\\System32\\cmd.exe',
+      ['/d', '/s', '/c', '"C:\\Program Files\\psmux\\tmux.cmd" list-panes'],
+      expect.objectContaining({ encoding: 'utf-8' }),
+    );
+
+    Object.defineProperty(process, 'platform', { value: originalPlatform, configurable: true });
+  });
+
+  it('quotes parenthesized tmux arguments when invoking through COMSPEC', () => {
+    const originalPlatform = process.platform;
+    Object.defineProperty(process, 'platform', { value: 'win32', configurable: true });
+    vi.stubEnv('COMSPEC', 'C:\\Windows\\System32\\cmd.exe');
+
+    mockedSpawnSync.mockClear();
+    mockedExecFileSync.mockClear();
+    mockedSpawnSync.mockReturnValueOnce({
+      status: 0,
+      stdout: 'C:\\Program Files\\psmux\\tmux.cmd\r\n',
+      stderr: '',
+      pid: 0,
+      output: [],
+      signal: null,
+    } as ReturnType<typeof spawnSync>);
+    mockedExecFileSync.mockReturnValue('ok' as any);
+
+    tmuxExec(['send-keys', 'foo(bar)']);
+
+    expect(mockedExecFileSync).toHaveBeenLastCalledWith(
+      'C:\\Windows\\System32\\cmd.exe',
+      ['/d', '/s', '/c', '"C:\\Program Files\\psmux\\tmux.cmd" send-keys "foo(bar)"'],
+      expect.objectContaining({ encoding: 'utf-8' }),
+    );
+
+    Object.defineProperty(process, 'platform', { value: originalPlatform, configurable: true });
+  });
 });
 
 // ---------------------------------------------------------------------------
 // wrapWithLoginShell
 // ---------------------------------------------------------------------------
 describe('wrapWithLoginShell', () => {
+  it('uses COMSPEC wrapping instead of Unix exec syntax on native Windows shells', () => {
+    const originalPlatform = process.platform;
+    Object.defineProperty(process, 'platform', { value: 'win32', configurable: true });
+    vi.stubEnv('COMSPEC', 'C:\\Windows\\System32\\cmd.exe');
+    vi.stubEnv('SHELL', '');
+    vi.stubEnv('HOME', 'C:\\Users\\test');
+
+    const result = wrapWithLoginShell('claude --print');
+
+    expect(result).toBe('C:\\Windows\\System32\\cmd.exe /d /s /c "claude --print"');
+    expect(result).not.toContain('exec ');
+    expect(result).not.toContain('-lc');
+    expect(result).not.toContain('.bashrc');
+    expect(result).not.toContain('.zshrc');
+
+    Object.defineProperty(process, 'platform', { value: originalPlatform, configurable: true });
+  });
+
+  it('uses cmd-style argument quoting for Windows tmux shell commands', () => {
+    const originalPlatform = process.platform;
+    Object.defineProperty(process, 'platform', { value: 'win32', configurable: true });
+
+    expect(buildTmuxShellCommand('claude', ['--print', 'hello world'])).toBe('claude --print "hello world"');
+
+    Object.defineProperty(process, 'platform', { value: originalPlatform, configurable: true });
+  });
+
+  it('uses cmd-style env injection for Windows tmux shell commands', () => {
+    const originalPlatform = process.platform;
+    Object.defineProperty(process, 'platform', { value: 'win32', configurable: true });
+
+    expect(buildTmuxShellCommandWithEnv('claude', ['--print'], { CODEX_HOME: 'C:\\Users\\me\\codex home' }))
+      .toBe('set "CODEX_HOME=C:\\Users\\me\\codex home" && claude --print');
+
+    Object.defineProperty(process, 'platform', { value: originalPlatform, configurable: true });
+  });
+
+  it('keeps Unix login-shell wrapping on MSYS2 Windows', () => {
+    const originalPlatform = process.platform;
+    Object.defineProperty(process, 'platform', { value: 'win32', configurable: true });
+    vi.stubEnv('MSYSTEM', 'MINGW64');
+    vi.stubEnv('SHELL', '/usr/bin/bash');
+    vi.stubEnv('HOME', '/home/testuser');
+
+    const result = wrapWithLoginShell('claude');
+
+    expect(result).toContain('exec ');
+    expect(result).toContain('-lc');
+    expect(result).toContain('/home/testuser/.bashrc');
+
+    Object.defineProperty(process, 'platform', { value: originalPlatform, configurable: true });
+  });
+
   it('wraps command with login shell using $SHELL', () => {
     vi.stubEnv('SHELL', '/bin/zsh');
     const result = wrapWithLoginShell('claude --print');
@@ -94,10 +309,10 @@ describe('wrapWithLoginShell', () => {
     expect(result).toMatch(/^exec /);
   });
 
-  it('defaults to /bin/bash when $SHELL is not set', () => {
+  it('defaults to /bin/sh when $SHELL is not set', () => {
     vi.stubEnv('SHELL', '');
     const result = wrapWithLoginShell('codex');
-    expect(result).toContain('/bin/bash');
+    expect(result).toContain('/bin/sh');
     expect(result).toContain('-lc');
   });
 
@@ -220,5 +435,40 @@ describe('createHudWatchPane login shell wrapping', () => {
       'utf-8'
     );
     expect(source).toContain('wrapWithLoginShell(hudCmd)');
+  });
+});
+
+describe('HUD pane tmux server targeting', () => {
+  it('creates HUD panes against the current tmux server', () => {
+    vi.stubEnv('TMUX', '/tmp/tmux-100/default,123,0');
+    mockedExecFileSync.mockReturnValue('%12\n' as any);
+
+    expect(createHudWatchPane('/tmp/project', 'omc hud --watch')).toBe('%12');
+
+    const lastCall = mockedExecFileSync.mock.calls.at(-1);
+    expect(lastCall?.[1]?.[0]).toBe('split-window');
+    expect(lastCall?.[2]?.env?.TMUX).toBe('/tmp/tmux-100/default,123,0');
+  });
+
+  it('lists HUD panes against the current tmux server', () => {
+    vi.stubEnv('TMUX', '/tmp/tmux-100/default,123,0');
+    mockedExecFileSync.mockReturnValue('%2\tnode\tnode /tmp/omc.js hud --watch\n' as any);
+
+    expect(listHudWatchPaneIdsInCurrentWindow()).toEqual(['%2']);
+
+    const lastCall = mockedExecFileSync.mock.calls.at(-1);
+    expect(lastCall?.[1]).toEqual(['list-panes', '-F', '#{pane_id}\t#{pane_current_command}\t#{pane_start_command}']);
+    expect(lastCall?.[2]?.env?.TMUX).toBe('/tmp/tmux-100/default,123,0');
+  });
+
+  it('kills HUD panes against the current tmux server', () => {
+    vi.stubEnv('TMUX', '/tmp/tmux-100/default,123,0');
+    mockedExecFileSync.mockReturnValue('' as any);
+
+    killTmuxPane('%9');
+
+    const lastCall = mockedExecFileSync.mock.calls.at(-1);
+    expect(lastCall?.[1]).toEqual(['kill-pane', '-t', '%9']);
+    expect(lastCall?.[2]?.env?.TMUX).toBe('/tmp/tmux-100/default,123,0');
   });
 });

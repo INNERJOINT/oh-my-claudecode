@@ -140,7 +140,7 @@ describe('team api dispatch-aware messaging', () => {
 
     const requests = await listDispatchRequests(teamName, cwd, { kind: 'mailbox', to_worker: 'worker-1' });
     expect(requests).toHaveLength(1);
-    expect(requests[0]?.trigger_message).toContain('$OMC_TEAM_STATE_ROOT/team/dispatch-team/mailbox/worker-1.json');
+    expect(requests[0]?.trigger_message).toContain('$OMC_TEAM_STATE_ROOT/mailbox/worker-1.json');
     expect(requests[0]?.trigger_message).toContain('report progress');
   });
 
@@ -206,6 +206,7 @@ describe('team api dispatch-aware messaging', () => {
     const requests = await listDispatchRequests(teamName, cwd, { kind: 'mailbox', to_worker: 'worker-1' });
     expect(requests).toHaveLength(1);
     expect(requests[0]?.message_id).toBe(messageId);
-    expect(requests[0]?.status).toBe('pending');
+    expect(requests[0]?.pane_id).toBe('%9');
+    expect(['pending', 'notified']).toContain(requests[0]?.status);
   });
 });

@@ -5,11 +5,11 @@
  * Statusline command that visualizes oh-my-claudecode state.
  * Receives stdin JSON from Claude Code and outputs formatted statusline.
  */
-import { readStdin, writeStdinCache, readStdinCache, getContextPercent, getModelName, stabilizeContextPercent, } from "./stdin.js";
+import { readStdin, writeStdinCache, readStdinCache, getContextPercent, getModelName, getRateLimitsFromStdin, stabilizeContextPercent, } from "./stdin.js";
 import { parseTranscript } from "./transcript.js";
 import { readHudState, readHudConfig, getRunningTasks, writeHudState, initializeHUDState, } from "./state.js";
 import { readRalphStateForHud, readUltraworkStateForHud, readPrdStateForHud, readAutopilotStateForHud, } from "./omc-state.js";
-import { getUsage } from "./usage-api.js";
+import { getUsage, getSubscriptionInfo } from "./usage-api.js";
 import { executeCustomProvider } from "./custom-rate-provider.js";
 import { render } from "./render.js";
 import { detectApiKeySource } from "./elements/api-key-source.js";
@@ -25,6 +25,7 @@ import { homedir } from "os";
 import { spawn } from "child_process";
 import { fileURLToPath } from "url";
 import { getOmcRoot } from "../lib/worktree-paths.js";
+import { getClaudeConfigDir } from "../utils/config-dir.js";
 /**
  * Extract session ID (UUID) from a transcript path.
  */
@@ -33,6 +34,18 @@ function extractSessionIdFromPath(transcriptPath) {
         return null;
     const match = transcriptPath.match(/([0-9a-f-]{36})(?:\.jsonl)?$/i);
     return match ? match[1] : null;
+}
+function mergeStdinRateLimits(stdinRateLimits, usageResult) {
+    if (!stdinRateLimits) {
+        return usageResult;
+    }
+    return {
+        ...(usageResult ?? {}),
+        rateLimits: {
+            ...(usageResult?.rateLimits ?? {}),
+            ...stdinRateLimits,
+        },
+    };
 }
 /**
  * Read cached session summary from state directory.
@@ -135,6 +148,42 @@ async function calculateSessionHealth(sessionStart, contextPercent) {
     return { durationMinutes, messageCount: 0, health };
 }
 /**
+ * Show installation diagnostic when called from CLI without stdin.
+ * Helps users verify HUD setup after omc-setup.
+ */
+function showDiagnostic() {
+    const version = getRuntimePackageVersion();
+    const configDir = getClaudeConfigDir();
+    const hudScript = join(configDir, "hud", "omc-hud.mjs");
+    const settingsFile = join(configDir, "settings.json");
+    const hudExists = existsSync(hudScript);
+    let statusLineOk = false;
+    try {
+        const settings = JSON.parse(readFileSync(settingsFile, "utf-8"));
+        const sl = settings.statusLine;
+        if (sl && typeof sl === "object" && typeof sl.command === "string") {
+            statusLineOk = sl.command.includes("omc-hud");
+        }
+        else if (typeof sl === "string") {
+            statusLineOk = sl.includes("omc-hud");
+        }
+    }
+    catch {
+        /* settings.json missing or invalid */
+    }
+    const config = readHudConfig();
+    const preset = config.preset ?? "focused";
+    console.log(`[OMC] HUD v${version} | preset: ${preset}`);
+    console.log(`  HUD script:  ${hudExists ? "installed" : "MISSING"}`);
+    console.log(`  statusLine:  ${statusLineOk ? "configured" : "NOT configured"}`);
+    if (!hudExists || !statusLineOk) {
+        console.log("  Run /oh-my-claudecode:hud setup to fix.");
+    }
+    else {
+        console.log("  HUD renders automatically inside Claude Code sessions.");
+    }
+}
+/**
  * Main HUD entry point
  * @param watchMode - true when called from the --watch polling loop (stdin is TTY)
  */
@@ -158,8 +207,8 @@ async function main(watchMode = false, skipInit = false) {
             }
         }
         else {
-            // Non-watch invocation with no stdin - suggest setup
-            console.log("[OMC] run /omc-setup to install properly");
+            // CLI invocation (TTY, no stdin) — show installation diagnostic
+            showDiagnostic();
             return;
         }
         const cwd = resolveToWorktreeRoot(stdin.cwd || undefined);
@@ -180,7 +229,7 @@ async function main(watchMode = false, skipInit = false) {
                 0;
             if (cols > 0) {
                 config.maxWidth = cols;
-                if (!config.wrapMode)
+                if (config.wrapMode === "truncate")
                     config.wrapMode = "wrap";
             }
         }
@@ -191,13 +240,18 @@ async function main(watchMode = false, skipInit = false) {
             staleTaskThresholdMinutes: config.staleTaskThresholdMinutes,
         });
         const currentSessionId = extractSessionIdFromPath(resolvedTranscriptPath ?? stdin.transcript_path ?? "");
+        // Initialize HUD state (cleanup stale/orphaned tasks)
+        // Must happen after cwd resolution so cleanup targets the correct project directory
+        if (!skipInit) {
+            await initializeHUDState(cwd, currentSessionId ?? undefined);
+        }
         // Read OMC state files
         const ralph = readRalphStateForHud(cwd, currentSessionId ?? undefined);
         const ultrawork = readUltraworkStateForHud(cwd, currentSessionId ?? undefined);
         const prd = readPrdStateForHud(cwd);
         const autopilot = readAutopilotStateForHud(cwd, currentSessionId ?? undefined);
         // Read HUD state for background tasks
-        const hudState = readHudState(cwd);
+        const hudState = readHudState(cwd, currentSessionId ?? undefined);
         const _backgroundTasks = hudState?.backgroundTasks || [];
         // Persist session start time to survive tail-parsing resets (#528)
         // When tail parsing kicks in for large transcripts, sessionStart comes from
@@ -223,10 +277,16 @@ async function main(watchMode = false, skipInit = false) {
             stateToWrite.sessionStartTimestamp = sessionStart.toISOString();
             stateToWrite.sessionId = currentSessionId ?? undefined;
             stateToWrite.timestamp = new Date().toISOString();
-            writeHudState(stateToWrite, cwd);
+            writeHudState(stateToWrite, cwd, currentSessionId ?? undefined);
         }
-        // Fetch rate limits from OAuth API (if available)
-        const rateLimitsResult = config.elements.rateLimits !== false ? await getUsage() : null;
+        // Merge Claude Code stdin generic buckets with API/cache-specific fields.
+        // Stdin owns fresher five-hour/seven-day values, while getUsage() may provide
+        // Sonnet/Opus weekly, monthly, extra, stale, and error metadata.
+        const stdinRateLimits = getRateLimitsFromStdin(stdin);
+        const usageResult = config.elements.rateLimits === false ? null : await getUsage();
+        const rateLimitsResult = config.elements.rateLimits === false
+            ? null
+            : mergeStdinRateLimits(stdinRateLimits, usageResult);
         // Fetch custom rate limit buckets (if configured)
         const customBuckets = config.rateLimitsProvider?.type === "custom"
             ? await executeCustomProvider(config.rateLimitsProvider)
@@ -283,6 +343,8 @@ async function main(watchMode = false, skipInit = false) {
             ? await refreshMissionBoardState(cwd, config.missionBoard)
             : null;
         const contextPercent = getContextPercent(stdin);
+        // Read subscription info for enterprise detection (best-effort, never throws)
+        const subscriptionInfo = getSubscriptionInfo();
         // Build render context
         const context = {
             contextPercent,
@@ -316,10 +378,13 @@ async function main(watchMode = false, skipInit = false) {
             apiKeySource: config.elements.apiKeySource
                 ? detectApiKeySource(cwd)
                 : null,
+            subscriptionType: subscriptionInfo.subscriptionType,
+            rateLimitTier: subscriptionInfo.rateLimitTier,
             profileName: process.env.CLAUDE_CONFIG_DIR
                 ? basename(process.env.CLAUDE_CONFIG_DIR).replace(/^\./, "")
                 : null,
             sessionSummary,
+            lastToolName: transcriptData.lastToolName,
         };
         // Debug: log data if OMC_DEBUG is set
         if (process.env.OMC_DEBUG) {
@@ -351,12 +416,14 @@ async function main(watchMode = false, skipInit = false) {
         let output = await render(context, config);
         // Apply safe mode sanitization if enabled (Issue #346)
         // This strips ANSI codes and uses ASCII-only output to prevent
-        // terminal rendering corruption during concurrent updates
-        // On Windows, always use safe mode to prevent terminal rendering issues
-        // with non-breaking spaces and ANSI escape sequences
-        // Keep explicit win32 check visible for regression tests: process.platform === 'win32'
-        // config.elements.safeMode || process.platform === 'win32'
-        const useSafeMode = config.elements.safeMode || process.platform === "win32";
+        // terminal rendering corruption during concurrent updates.
+        // On Windows, default to safe mode unless the user explicitly sets safeMode: false
+        // (e.g. Windows Terminal and modern terminals support ANSI natively).
+        // The win32 fallback is retained for configs that omit safeMode entirely
+        // (before default merge, e.g. minimal config files or future schema changes).
+        // explicit false overrides platform detection: process.platform === 'win32'
+        const useSafeMode = config.elements.safeMode !== false &&
+            (config.elements.safeMode || process.platform === "win32");
         if (useSafeMode) {
             output = sanitizeOutput(output);
             // In safe mode, use regular spaces (don't convert to non-breaking)

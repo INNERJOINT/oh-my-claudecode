@@ -3,7 +3,7 @@
 // Processes <remember> tags from Task agent output
 // Saves to .omc/notepad.md for compaction-resilient memory
 
-import { existsSync, readFileSync, mkdirSync, writeFileSync } from 'fs';
+import { existsSync, readFileSync, mkdirSync, writeFileSync, unlinkSync } from 'fs';
 import { join, dirname } from 'path';
 import { homedir } from 'os';
 import { fileURLToPath, pathToFileURL } from 'url';
@@ -56,18 +56,121 @@ function getInvokedSkillName(toolInput) {
     : normalized.toLowerCase();
 }
 
-function activateState(directory, stateName, state, sessionId) {
-  const localDir = join(directory, '.omc', 'state');
-  if (!existsSync(localDir)) {
-    try { mkdirSync(localDir, { recursive: true }); } catch {}
-  }
-  try { writeFileSync(join(localDir, `${stateName}-state.json`), JSON.stringify(state, null, 2)); } catch {}
+function getSkillInvocationArgs(toolInput) {
+  if (!toolInput || typeof toolInput !== 'object') return '';
+  const candidates = [
+    toolInput.args,
+    toolInput.arguments,
+    toolInput.argument,
+    toolInput.skill_args,
+    toolInput.skillArgs,
+    toolInput.prompt,
+    toolInput.description,
+    toolInput.input,
+  ];
+  return candidates.find(value => typeof value === 'string' && value.trim().length > 0)?.trim() || '';
+}
 
-  const globalDir = join(homedir(), '.omc', 'state');
-  if (!existsSync(globalDir)) {
-    try { mkdirSync(globalDir, { recursive: true }); } catch {}
+function isConsensusPlanningSkillInvocation(skillName, toolInput) {
+  if (!skillName) return false;
+  if (skillName === 'ralplan') return true;
+  if (skillName !== 'plan' && skillName !== 'omc-plan') return false;
+  return getSkillInvocationArgs(toolInput).toLowerCase().includes('--consensus');
+}
+
+const SESSION_ID_ALLOWLIST = /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,255}$/;
+
+function getSkillActiveStatePaths(directory, sessionId) {
+  const stateDir = join(directory, '.omc', 'state');
+  const safeSessionId = sessionId && SESSION_ID_ALLOWLIST.test(sessionId) ? sessionId : '';
+  return [
+    safeSessionId ? join(stateDir, 'sessions', safeSessionId, 'skill-active-state.json') : null,
+    join(stateDir, 'skill-active-state.json'),
+  ].filter(Boolean);
+}
+
+function readSkillActiveState(directory, sessionId) {
+  for (const statePath of getSkillActiveStatePaths(directory, sessionId)) {
+    try {
+      if (!existsSync(statePath)) continue;
+      const state = JSON.parse(readFileSync(statePath, 'utf-8'));
+      if (state && typeof state === 'object') return state;
+    } catch {}
   }
-  try { writeFileSync(join(globalDir, `${stateName}-state.json`), JSON.stringify(state, null, 2)); } catch {}
+  return null;
+}
+
+function clearSkillActiveState(directory, sessionId) {
+  for (const statePath of getSkillActiveStatePaths(directory, sessionId)) {
+    try {
+      unlinkSync(statePath);
+    } catch {}
+  }
+}
+
+function getRalplanStatePaths(directory, sessionId) {
+  const stateDir = join(directory, '.omc', 'state');
+  const safeSessionId = sessionId && SESSION_ID_ALLOWLIST.test(sessionId) ? sessionId : '';
+  return [
+    safeSessionId ? join(stateDir, 'sessions', safeSessionId, 'ralplan-state.json') : null,
+    join(stateDir, 'ralplan-state.json'),
+  ].filter(Boolean);
+}
+
+function deactivateRalplanState(directory, sessionId) {
+  const safeSessionId = sessionId && SESSION_ID_ALLOWLIST.test(sessionId) ? sessionId : '';
+  const terminalPhases = new Set(['complete', 'completed', 'failed', 'cancelled', 'done']);
+  const now = new Date().toISOString();
+
+  for (const statePath of getRalplanStatePaths(directory, sessionId)) {
+    try {
+      if (!existsSync(statePath)) continue;
+      const state = JSON.parse(readFileSync(statePath, 'utf-8'));
+      if (!state || typeof state !== 'object') continue;
+      if (safeSessionId && typeof state.session_id === 'string' && state.session_id !== safeSessionId) {
+        continue;
+      }
+      const currentPhase = typeof state.current_phase === 'string' ? state.current_phase : '';
+      const nextPhase = terminalPhases.has(currentPhase.toLowerCase()) ? currentPhase : 'complete';
+      atomicWriteFileSync(
+        statePath,
+        JSON.stringify(
+          {
+            ...state,
+            active: false,
+            current_phase: nextPhase,
+            completed_at: typeof state.completed_at === 'string' ? state.completed_at : now,
+            deactivated_reason:
+              typeof state.deactivated_reason === 'string'
+                ? state.deactivated_reason
+                : 'skill_completed',
+          },
+          null,
+          2,
+        ),
+      );
+    } catch {}
+  }
+}
+
+function activateState(directory, stateName, state, sessionId) {
+  const stateDir = join(directory, '.omc', 'state');
+  const safeSessionId = sessionId && SESSION_ID_ALLOWLIST.test(sessionId) ? sessionId : '';
+  const targetDir = safeSessionId
+    ? join(stateDir, 'sessions', safeSessionId)
+    : stateDir;
+
+  try {
+    if (!existsSync(targetDir)) mkdirSync(targetDir, { recursive: true });
+    atomicWriteFileSync(join(targetDir, `${stateName}-state.json`), JSON.stringify(state, null, 2));
+  } catch {}
+
+  // Also write to global fallback
+  const globalDir = join(homedir(), '.omc', 'state');
+  try {
+    if (!existsSync(globalDir)) mkdirSync(globalDir, { recursive: true });
+    atomicWriteFileSync(join(globalDir, `${stateName}-state.json`), JSON.stringify(state, null, 2));
+  } catch {}
 }
 
 // Set priority context
@@ -145,13 +248,21 @@ async function main() {
     // Handle Skill("...:ralph") invocations so ralph handoffs activate persistent states.
     if (String(toolName).toLowerCase() === 'skill') {
       const skillName = getInvokedSkillName(toolInput);
+      const currentState = readSkillActiveState(directory, sessionId);
+      const completingSkill = (skillName || '').replace(/^oh-my-claudecode:/, '');
+      if (!currentState || !currentState.active || currentState.skill_name === completingSkill) {
+        clearSkillActiveState(directory, sessionId);
+      }
+      if (isConsensusPlanningSkillInvocation(skillName, toolInput)) {
+        deactivateRalplanState(directory, sessionId);
+      }
       if (skillName === 'ralph') {
         const now = new Date().toISOString();
         const promptText = data.prompt || data.message || 'Ralph loop activated via Skill tool';
         activateState(directory, 'ralph', {
           active: true,
           iteration: 1,
-          max_iterations: 10,
+          max_iterations: 100,
           started_at: now,
           prompt: promptText,
           session_id: sessionId || undefined,

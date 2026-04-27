@@ -80,6 +80,78 @@ describe('unified MCP registry sync', () => {
     expect(codexConfig).toContain('startup_timeout_sec = 15');
   });
 
+  it('drops retired team MCP runtime entries while syncing legacy configs', () => {
+    const settings = {
+      theme: 'dark',
+      mcpServers: {
+        team: {
+          command: 'node',
+          args: ['${CLAUDE_PLUGIN_ROOT}/bridge/team-mcp.cjs'],
+        },
+        gitnexus: {
+          command: 'gitnexus',
+          args: ['mcp'],
+          timeout: 15,
+        },
+      },
+    };
+
+    const { settings: syncedSettings } = syncUnifiedMcpRegistryTargets(settings);
+
+    expect(syncedSettings).toEqual({ theme: 'dark' });
+
+    expect(JSON.parse(readFileSync(getUnifiedMcpRegistryPath(), 'utf-8'))).toEqual({
+      gitnexus: {
+        command: 'gitnexus',
+        args: ['mcp'],
+        timeout: 15,
+      },
+    });
+
+    expect(JSON.parse(readFileSync(getClaudeMcpConfigPath(), 'utf-8'))).toEqual({
+      mcpServers: {
+        gitnexus: {
+          command: 'gitnexus',
+          args: ['mcp'],
+          timeout: 15,
+        },
+      },
+    });
+
+    const codexConfig = readFileSync(getCodexConfigPath(), 'utf-8');
+    expect(codexConfig).toContain('[mcp_servers.gitnexus]');
+    expect(codexConfig).not.toContain('team-mcp.cjs');
+  });
+
+  it('backfills launcher-backed MCP startup timeouts and stays idempotent', () => {
+    const settings = {
+      mcpServers: {
+        filesystem: {
+          command: 'npx',
+          args: ['-y', '@modelcontextprotocol/server-filesystem', '/tmp'],
+        },
+      },
+    };
+
+    const first = syncUnifiedMcpRegistryTargets(settings);
+    const second = syncUnifiedMcpRegistryTargets(settings);
+
+    expect(first.result.codexChanged).toBe(true);
+    expect(first.settings).toEqual({});
+    expect(JSON.parse(readFileSync(getUnifiedMcpRegistryPath(), 'utf-8'))).toEqual({
+      filesystem: {
+        command: 'npx',
+        args: ['-y', '@modelcontextprotocol/server-filesystem', '/tmp'],
+        timeout: 15,
+      },
+    });
+
+    const codexConfig = readFileSync(getCodexConfigPath(), 'utf-8');
+    expect(codexConfig).toContain('[mcp_servers.filesystem]');
+    expect(codexConfig).toContain('startup_timeout_sec = 15');
+    expect(second.result.codexChanged).toBe(false);
+  });
+
   it('round-trips URL-based remote MCP entries through the unified registry sync', () => {
     const settings = {
       mcpServers: {
@@ -106,6 +178,81 @@ describe('unified MCP registry sync', () => {
     expect(codexConfig).toContain('[mcp_servers.remoteOmc]');
     expect(codexConfig).toContain('url = "https://lab.example.com/mcp"');
     expect(codexConfig).toContain('startup_timeout_sec = 30');
+  });
+
+
+  it('reproduces issue #2679: sync strips remote entry type during round-trip', () => {
+    const settings = {
+      mcpServers: {
+        mySseServer: {
+          url: 'http://localhost:11235/mcp/sse',
+          type: 'sse',
+        },
+      },
+    };
+
+    const { settings: syncedSettings, result } = syncUnifiedMcpRegistryTargets(settings);
+
+    expect(result.bootstrappedFromClaude).toBe(true);
+    expect(result.serverNames).toEqual(['mySseServer']);
+    expect(syncedSettings).toEqual({});
+
+    expect(JSON.parse(readFileSync(getUnifiedMcpRegistryPath(), 'utf-8'))).toEqual({
+      mySseServer: {
+        url: 'http://localhost:11235/mcp/sse',
+        type: 'sse',
+      },
+    });
+    expect(JSON.parse(readFileSync(getClaudeMcpConfigPath(), 'utf-8'))).toEqual({
+      mcpServers: {
+        mySseServer: {
+          url: 'http://localhost:11235/mcp/sse',
+          type: 'sse',
+        },
+      },
+    });
+
+    const codexConfig = readFileSync(getCodexConfigPath(), 'utf-8');
+    expect(codexConfig).toContain('[mcp_servers.mySseServer]');
+    expect(codexConfig).toContain('url = "http://localhost:11235/mcp/sse"');
+    expect(codexConfig).toContain('type = "sse"');
+  });
+
+  it('preserves explicit launcher timeouts and leaves custom MCP servers untouched', () => {
+    const settings = {
+      mcpServers: {
+        launchable: {
+          command: 'uvx',
+          args: ['mcp-server-example'],
+          timeout: 22,
+        },
+        custom: {
+          command: 'custom-mcp',
+          args: ['serve'],
+        },
+      },
+    };
+
+    const { settings: syncedSettings } = syncUnifiedMcpRegistryTargets(settings);
+
+    expect(syncedSettings).toEqual({});
+    expect(JSON.parse(readFileSync(getUnifiedMcpRegistryPath(), 'utf-8'))).toEqual({
+      custom: {
+        command: 'custom-mcp',
+        args: ['serve'],
+      },
+      launchable: {
+        command: 'uvx',
+        args: ['mcp-server-example'],
+        timeout: 22,
+      },
+    });
+
+    const codexConfig = readFileSync(getCodexConfigPath(), 'utf-8');
+    expect(codexConfig).toContain('[mcp_servers.launchable]');
+    expect(codexConfig).toContain('startup_timeout_sec = 22');
+    expect(codexConfig).toContain('[mcp_servers.custom]');
+    expect(codexConfig).not.toContain('startup_timeout_sec = 15');
   });
 
   it('removes legacy mcpServers from settings.json while preserving unrelated Claude settings', () => {
@@ -165,6 +312,108 @@ describe('unified MCP registry sync', () => {
     const second = syncCodexConfigToml(first.content, registry);
     expect(second.changed).toBe(false);
     expect(second.content).toBe(first.content);
+  });
+
+  it('does not append managed duplicates for existing user-owned mcp_servers tables', () => {
+    const existingToml = [
+      'model = "gpt-5"',
+      '',
+      '[mcp_servers.atlassian]',
+      'command = "uvx"',
+      'args = ["mcp-atlassian"]',
+      '',
+    ].join('\n');
+
+    const registry = {
+      atlassian: {
+        command: 'uvx',
+        args: ['mcp-atlassian'],
+      },
+      storybook_local: {
+        command: 'npx',
+        args: ['-y', '@storybook/mcp'],
+        timeout: 15,
+      },
+    };
+
+    const result = syncCodexConfigToml(existingToml, registry);
+
+    expect(result.changed).toBe(true);
+    expect(result.content.match(/\[mcp_servers\.atlassian\]/g)).toHaveLength(1);
+    expect(result.content).toContain('[mcp_servers.storybook_local]');
+    expect(result.content).toContain('# BEGIN OMC MANAGED MCP REGISTRY');
+    expect(result.content).toContain('# END OMC MANAGED MCP REGISTRY');
+
+    const second = syncCodexConfigToml(result.content, registry);
+    expect(second.changed).toBe(false);
+    expect(second.content).toBe(result.content);
+  });
+
+  it('preserves an existing user-owned codex table when setup sync runs repeatedly', () => {
+    writeFileSync(getUnifiedMcpRegistryPath(), JSON.stringify({
+      atlassian: { command: 'uvx', args: ['mcp-atlassian'] },
+      storybook_local: { command: 'npx', args: ['-y', '@storybook/mcp'], timeout: 15 },
+    }, null, 2));
+    writeFileSync(getCodexConfigPath(), [
+      'model = "gpt-5"',
+      '',
+      '[mcp_servers.atlassian]',
+      'command = "uvx"',
+      'args = ["mcp-atlassian"]',
+      '',
+    ].join('\n'));
+
+    const first = syncUnifiedMcpRegistryTargets({ theme: 'dark' });
+    const second = syncUnifiedMcpRegistryTargets({ theme: 'dark' });
+    const codexConfig = readFileSync(getCodexConfigPath(), 'utf-8');
+
+    expect(first.result.codexChanged).toBe(true);
+    expect(second.result.codexChanged).toBe(false);
+    expect(codexConfig.match(/\[mcp_servers\.atlassian\]/g)).toHaveLength(1);
+    expect(codexConfig).toContain('[mcp_servers.storybook_local]');
+  });
+
+  it('skips invalid registry server names when rendering managed Codex TOML blocks', () => {
+    const maliciousName = 'evil]\nmodel = "pwned"\n[mcp_servers.injected';
+    const result = syncCodexConfigToml('model = "gpt-5"\n', {
+      [maliciousName]: {
+        command: 'uvx',
+        args: ['demo-server'],
+      },
+      safe_name: {
+        command: 'custom-mcp',
+        args: ['serve'],
+      },
+    });
+
+    expect(result.content).toContain('model = "gpt-5"');
+    expect(result.content).toContain('[mcp_servers.safe_name]');
+    expect(result.content).not.toContain('[mcp_servers.evil]');
+    expect(result.content).not.toContain('[mcp_servers.injected]');
+    expect(result.content).not.toContain('model = "pwned"');
+  });
+
+  it('does not let malformed registry names inject extra Codex MCP tables during setup sync', () => {
+    const maliciousName = 'evil]\nmodel = "pwned"\n[mcp_servers.injected';
+    writeFileSync(getUnifiedMcpRegistryPath(), JSON.stringify({
+      [maliciousName]: {
+        command: 'uvx',
+        args: ['demo-server'],
+      },
+      safe_name: {
+        command: 'custom-mcp',
+        args: ['serve'],
+      },
+    }, null, 2));
+
+    const { result } = syncUnifiedMcpRegistryTargets({ theme: 'dark' });
+    const codexConfig = readFileSync(getCodexConfigPath(), 'utf-8');
+
+    expect(result.codexChanged).toBe(true);
+    expect(codexConfig).toContain('[mcp_servers.safe_name]');
+    expect(codexConfig).not.toContain('[mcp_servers.evil]');
+    expect(codexConfig).not.toContain('[mcp_servers.injected]');
+    expect(codexConfig).not.toContain('model = "pwned"');
   });
 
   it('removes previously managed Claude and Codex MCP entries when the registry becomes empty', () => {
@@ -283,6 +532,34 @@ describe('unified MCP registry sync', () => {
       theme: 'dark',
       mcpServers: {
         customLocal: { command: 'stale-custom', args: ['legacy'] },
+      },
+    });
+
+    expect(settings).toEqual({ theme: 'dark' });
+    expect(result.bootstrappedFromClaude).toBe(false);
+    expect(JSON.parse(readFileSync(getClaudeMcpConfigPath(), 'utf-8'))).toEqual({
+      mcpServers: {
+        customLocal: { command: 'custom-local', args: ['serve'] },
+        gitnexus: { command: 'gitnexus', args: ['mcp'] },
+      },
+    });
+  });
+
+
+  it('respects explicit removal from ~/.claude.json when legacy settings still contain a stale copy', () => {
+    writeFileSync(getUnifiedMcpRegistryPath(), JSON.stringify({
+      gitnexus: { command: 'gitnexus', args: ['mcp'] },
+    }, null, 2));
+    writeFileSync(getClaudeMcpConfigPath(), JSON.stringify({
+      mcpServers: {
+        customLocal: { command: 'custom-local', args: ['serve'] },
+      },
+    }, null, 2));
+
+    const { settings, result } = syncUnifiedMcpRegistryTargets({
+      theme: 'dark',
+      mcpServers: {
+        gitnexus: { command: 'stale-gitnexus', args: ['legacy'] },
       },
     });
 

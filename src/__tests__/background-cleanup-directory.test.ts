@@ -28,7 +28,7 @@ describe('background-cleanup directory propagation', () => {
 
     await cleanupStaleBackgroundTasks(undefined, '/custom/project/dir');
 
-    expect(readHudStateMock).toHaveBeenCalledWith('/custom/project/dir');
+    expect(readHudStateMock).toHaveBeenCalledWith('/custom/project/dir', undefined);
   });
 
   it('cleanupStaleBackgroundTasks should pass directory to writeHudState when cleaning', async () => {
@@ -43,7 +43,8 @@ describe('background-cleanup directory propagation', () => {
 
     expect(writeHudStateMock).toHaveBeenCalledWith(
       expect.objectContaining({ backgroundTasks: expect.any(Array) }),
-      '/custom/project/dir'
+      '/custom/project/dir',
+      undefined
     );
   });
 
@@ -52,7 +53,7 @@ describe('background-cleanup directory propagation', () => {
 
     await markOrphanedTasksAsStale('/custom/project/dir');
 
-    expect(readHudStateMock).toHaveBeenCalledWith('/custom/project/dir');
+    expect(readHudStateMock).toHaveBeenCalledWith('/custom/project/dir', undefined);
   });
 
   it('markOrphanedTasksAsStale should pass directory to writeHudState when marking', async () => {
@@ -67,7 +68,8 @@ describe('background-cleanup directory propagation', () => {
 
     expect(writeHudStateMock).toHaveBeenCalledWith(
       expect.objectContaining({ backgroundTasks: expect.any(Array) }),
-      '/custom/project/dir'
+      '/custom/project/dir',
+      undefined
     );
   });
 
@@ -75,10 +77,10 @@ describe('background-cleanup directory propagation', () => {
     readHudStateMock.mockReturnValue(null);
 
     await cleanupStaleBackgroundTasks();
-    expect(readHudStateMock).toHaveBeenCalledWith(undefined);
+    expect(readHudStateMock).toHaveBeenCalledWith(undefined, undefined);
 
     readHudStateMock.mockReset();
     await markOrphanedTasksAsStale();
-    expect(readHudStateMock).toHaveBeenCalledWith(undefined);
+    expect(readHudStateMock).toHaveBeenCalledWith(undefined, undefined);
   });
 });

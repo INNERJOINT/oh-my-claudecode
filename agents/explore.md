@@ -1,7 +1,7 @@
 ---
 name: explore
 description: Codebase search specialist for finding files and code patterns
-model: claude-haiku-4-5
+model: haiku
 level: 3
 disallowedTools: Write, Edit
 ---
@@ -64,7 +64,8 @@ disallowedTools: Write, Edit
   </Tool_Usage>
 
   <Execution_Policy>
-    - Default effort: medium (3-5 parallel searches from different angles).
+    - Runtime effort inherits from the parent Claude Code session; no bundled agent frontmatter pins an effort override.
+    - Behavioral effort guidance: medium (3-5 parallel searches from different angles).
     - Quick lookups: 1-2 targeted searches.
     - Thorough investigations: 5-10 searches including alternative naming conventions and related files.
     - Stop when you have enough information for the caller to proceed without follow-up questions.

@@ -134,7 +134,11 @@ export const DEADLOCK_CHECK_THRESHOLD = 3;
 const STATE_FILE = "subagent-tracking.json";
 const STALE_THRESHOLD_MS = 5 * 60 * 1000;
 const MAX_COMPLETED_AGENTS = 100;
-const LOCK_TIMEOUT_MS = 5000;
+// Split lock timings: acquisition stays short to avoid long Atomics.wait
+// stalls, while stale detection stays generous so healthy writers are not
+// treated as abandoned during slow disk read/merge/write sequences.
+const LOCK_ACQUIRE_TIMEOUT_MS = 500;
+const LOCK_STALE_MS = 30_000;
 const LOCK_RETRY_MS = 50;
 const WRITE_DEBOUNCE_MS = 100;
 const MAX_FLUSH_RETRIES = 3;
@@ -156,7 +160,13 @@ const flushInProgress = new Set<string>();
 function syncSleep(ms: number): void {
   const buffer = new SharedArrayBuffer(4);
   const view = new Int32Array(buffer);
-  Atomics.wait(view, 0, 0, ms);
+  try {
+    Atomics.wait(view, 0, 0, ms);
+  } catch {
+    // Main thread: Atomics.wait throws on Node <22
+    const waitUntil = Date.now() + ms;
+    while (Date.now() < waitUntil) { /* spin */ }
+  }
 }
 
 // ============================================================================
@@ -239,7 +249,7 @@ function acquireLock(directory: string): boolean {
 
   const startTime = Date.now();
 
-  while (Date.now() - startTime < LOCK_TIMEOUT_MS) {
+  while (Date.now() - startTime < LOCK_ACQUIRE_TIMEOUT_MS) {
     try {
       // Check for stale lock (older than timeout or dead process)
       if (existsSync(lockPath)) {
@@ -268,7 +278,7 @@ function acquireLock(directory: string): boolean {
           syncSleep(LOCK_RETRY_MS);
           continue;
         }
-        const isStale = Date.now() - lockTime > LOCK_TIMEOUT_MS;
+        const isStale = Date.now() - lockTime > LOCK_STALE_MS;
         const isDeadProcess = !isNaN(lockPid) && !isProcessAlive(lockPid);
 
         if (isStale || isDeadProcess) {

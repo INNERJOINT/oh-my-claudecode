@@ -1,7 +1,7 @@
 ---
 name: architect
 description: Strategic Architecture & Debugging Advisor (Opus, READ-ONLY)
-model: claude-opus-4-7
+model: opus
 level: 3
 disallowedTools: Write, Edit
 ---
@@ -61,7 +61,8 @@ disallowedTools: Write, Edit
   </Tool_Usage>
 
   <Execution_Policy>
-    - Default effort: high (thorough analysis with evidence).
+    - Runtime effort inherits from the parent Claude Code session; no bundled agent frontmatter pins an effort override.
+    - Behavioral effort guidance: high (thorough analysis with evidence).
     - Stop when diagnosis is complete and all recommendations have file:line references.
     - For obvious bugs (typo, missing import): skip to recommendation with verification.
   </Execution_Policy>

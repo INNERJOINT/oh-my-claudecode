@@ -27,8 +27,16 @@ function buildProviderArgs(provider, prompt, { pipePromptViaStdin = false } = {}
   return ['-p', prompt];
 }
 
-function shouldPipePromptViaStdin(provider) {
-  return SHOULD_USE_WINDOWS_SHELL && (provider === 'codex' || provider === 'gemini');
+function shouldPipePromptViaStdin(provider, prompt) {
+  if (provider !== 'codex' && provider !== 'gemini') {
+    return false;
+  }
+
+  if (typeof prompt === 'string' && (prompt.includes('\n') || prompt.length > 500)) {
+    return true;
+  }
+
+  return SHOULD_USE_WINDOWS_SHELL;
 }
 
 const ASK_ORIGINAL_TASK_ENV = 'OMC_ASK_ORIGINAL_TASK';
@@ -79,15 +87,22 @@ function parseArgs(argv) {
   return { provider, prompt: rest.join(' ').trim() };
 }
 
+// Strip Claude session markers so provider advisors do not detect or inherit the active Claude Code session.
+const CLAUDE_SESSION_STRIPPED_ENV_VARS = new Set([
+  'CLAUDECODE',
+  'CLAUDE_SESSION_ID',
+  'CLAUDECODE_SESSION_ID',
+  'CLAUDE_CODE_ENTRYPOINT',
+]);
 const CODEX_STRIPPED_ENV_VARS = new Set(['RUST_LOG', 'RUST_BACKTRACE', 'RUST_LIB_BACKTRACE']);
 
 function buildProviderEnv(provider, env = process.env) {
-  if (provider !== 'codex') {
-    return env;
-  }
+  const strippedEnvVars = provider === 'codex'
+    ? new Set([...CLAUDE_SESSION_STRIPPED_ENV_VARS, ...CODEX_STRIPPED_ENV_VARS])
+    : CLAUDE_SESSION_STRIPPED_ENV_VARS;
 
   return Object.fromEntries(
-    Object.entries(env).filter(([key]) => !CODEX_STRIPPED_ENV_VARS.has(key)),
+    Object.entries(env).filter(([key]) => !strippedEnvVars.has(key)),
   );
 }
 
@@ -213,14 +228,14 @@ async function main() {
 
   ensureBinary(provider, binary);
 
-  const pipePromptViaStdin = shouldPipePromptViaStdin(provider);
+  const pipePromptViaStdin = shouldPipePromptViaStdin(provider, prompt);
   const providerArgs = buildProviderArgs(provider, prompt, { pipePromptViaStdin });
   const run = spawnSync(binary, providerArgs, {
     encoding: 'utf8',
     maxBuffer: 10 * 1024 * 1024,
     env: buildProviderEnv(provider),
     shell: SHOULD_USE_WINDOWS_SHELL,
-    ...(pipePromptViaStdin ? { input: prompt } : {}),
+    ...(pipePromptViaStdin ? { input: prompt } : { stdio: ['ignore', 'pipe', 'pipe'] }),
   });
 
   const stdout = run.stdout || '';

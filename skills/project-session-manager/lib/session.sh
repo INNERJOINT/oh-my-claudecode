@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # PSM Session Registry Management
 
 # Lock file for atomic registry operations
@@ -161,9 +161,9 @@ psm_read_session_metadata() {
 
 # Get all session IDs for cleanup check
 psm_get_review_sessions() {
-    jq -r '.sessions | to_entries[] | select(.value.type == "review") | "\(.value.id)|\(.value.metadata.pr_number // empty)|\(.value.project)"' "$PSM_SESSIONS"
+    jq -r '.sessions | to_entries[] | select(.value.type == "review" and (.value.state // "active") == "active") | "\(.value.id)|\(.value.metadata.pr_number // empty)|\(.value.project)"' "$PSM_SESSIONS"
 }
 
 psm_get_fix_sessions() {
-    jq -r '.sessions | to_entries[] | select(.value.type == "fix") | "\(.value.id)|\(.value.metadata.issue_number // empty)|\(.value.project)"' "$PSM_SESSIONS"
+    jq -r '.sessions | to_entries[] | select(.value.type == "fix" and (.value.state // "active") == "active") | "\(.value.id)|\(.value.metadata.issue_number // empty)|\(.value.project)"' "$PSM_SESSIONS"
 }

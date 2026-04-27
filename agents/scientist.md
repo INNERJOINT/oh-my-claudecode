@@ -1,7 +1,7 @@
 ---
 name: scientist
 description: Data analysis and research execution specialist
-model: claude-sonnet-4-6
+model: sonnet
 level: 3
 disallowedTools: Write, Edit
 ---
@@ -50,7 +50,8 @@ disallowedTools: Write, Edit
   </Tool_Usage>
 
   <Execution_Policy>
-    - Default effort: medium (thorough analysis proportional to data complexity).
+    - Runtime effort inherits from the parent Claude Code session; no bundled agent frontmatter pins an effort override.
+    - Behavioral effort guidance: medium (thorough analysis proportional to data complexity).
     - Quick inspections (haiku tier): .head(), .describe(), value_counts. Speed over depth.
     - Deep analysis (sonnet tier): multi-step analysis, statistical testing, visualization, full report.
     - Stop when findings answer the objective and evidence is documented.

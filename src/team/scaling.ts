@@ -11,8 +11,18 @@
  */
 
 import { resolve } from 'path';
-import { mkdir } from 'fs/promises';
-import { execFileSync, spawnSync } from 'child_process';
+import { mkdir, readFile } from 'fs/promises';
+import { tmuxExec, tmuxSpawn } from '../cli/tmux-utils.js';
+import {
+  buildWorkerArgv,
+  getWorkerEnv as getModelWorkerEnv,
+  resolveClaudeWorkerModel,
+  type CliAgentType,
+} from './model-contract.js';
+import { CANONICAL_TEAM_ROLES } from '../shared/types.js';
+import type { CanonicalTeamRole } from '../shared/types.js';
+import { normalizeDelegationRole } from '../features/delegation-routing/types.js';
+import { routeTaskToRole } from './role-router.js';
 import {
   teamReadConfig,
   teamWriteWorkerIdentity,
@@ -25,16 +35,26 @@ import {
 import { withScalingLock, saveTeamConfig } from './monitor.js';
 import {
   sanitizeName,
-  isWorkerAlive,
+  getWorkerLiveness,
   killWorkerPanes,
   buildWorkerStartCommand,
   waitForPaneReady,
 } from './tmux-session.js';
 import { TeamPaths, absPath } from './state-paths.js';
+import { writeWorkerOverlay } from './worker-bootstrap.js';
+import {
+  ensureWorkerWorktree,
+  installWorktreeRootAgents,
+  prepareWorkerWorktreeForRemoval,
+  removeWorkerWorktree,
+  restoreWorktreeRootAgents,
+  type TeamWorktreeMode,
+} from './git-worktree.js';
 
 // ── Environment gate ──────────────────────────────────────────────────────────
 
 const OMC_TEAM_SCALING_ENABLED_ENV = 'OMC_TEAM_SCALING_ENABLED';
+const CLI_AGENT_TYPES = new Set<CliAgentType>(['claude', 'codex', 'gemini']);
 
 export function isScalingEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
   const raw = env[OMC_TEAM_SCALING_ENABLED_ENV];
@@ -49,6 +69,16 @@ function assertScalingEnabled(env: NodeJS.ProcessEnv = process.env): void {
       `Dynamic scaling is disabled. Set ${OMC_TEAM_SCALING_ENABLED_ENV}=1 to enable.`,
     );
   }
+}
+
+function asCliAgentType(agentType: string): CliAgentType {
+  if (CLI_AGENT_TYPES.has(agentType as CliAgentType)) {
+    return agentType as CliAgentType;
+  }
+
+  throw new Error(
+    `Unknown agent type: ${agentType}. Supported: ${Array.from(CLI_AGENT_TYPES).join(', ')}`,
+  );
 }
 
 // ── Result types ──────────────────────────────────────────────────────────────
@@ -88,6 +118,7 @@ export async function scaleUp(
   env: NodeJS.ProcessEnv = process.env,
 ): Promise<ScaleUpResult | ScaleError> {
   assertScalingEnabled(env);
+  const cliAgentType = asCliAgentType(agentType);
 
   if (!Number.isInteger(count) || count < 1) {
     return { ok: false, error: `count must be a positive integer (got ${count})` };
@@ -111,14 +142,27 @@ export async function scaleUp(
       };
     }
 
-    const teamStateRoot = config.team_state_root ?? `${leaderCwd}/.omc/state`;
+    const teamStateRoot = config.team_state_root ?? `${leaderCwd}/.omc/state/team/${sanitized}`;
+    const worktreeMode: TeamWorktreeMode = config.worktree_mode ?? 'disabled';
 
     // Resolve the monotonic worker index counter
     let nextIndex = config.next_worker_index ?? (currentCount + 1);
-    const initialNextIndex = nextIndex;
     const addedWorkers: WorkerInfo[] = [];
+    const pendingWorktrees: Array<{ workerName: string; created: boolean }> = [];
+
+    const cleanupScaledWorkerWorktree = (workerName: string, created: boolean): void => {
+      if (created) {
+        removeWorkerWorktree(sanitized, workerName, leaderCwd);
+      } else {
+        const restored = restoreWorktreeRootAgents(sanitized, workerName, leaderCwd);
+        if (restored.reason === 'agents_dirty') {
+          throw new Error(`agents_dirty: preserving modified worktree root AGENTS.md for ${workerName}`);
+        }
+      }
+    };
 
     const rollbackScaleUp = async (error: string, paneId?: string): Promise<ScaleError> => {
+      const cleanedWorktrees = new Set<string>();
       for (const w of addedWorkers) {
         const idx = config.workers.findIndex((worker) => worker.name === w.name);
         if (idx >= 0) {
@@ -126,29 +170,50 @@ export async function scaleUp(
         }
         try {
           if (w.pane_id) {
-            execFileSync('tmux', ['kill-pane', '-t', w.pane_id], { stdio: 'pipe' });
+            tmuxExec(['kill-pane', '-t', w.pane_id], { stdio: 'pipe' });
           }
-        } catch { /* best-effort pane cleanup */ }
+          if (w.worktree_path) {
+            cleanupScaledWorkerWorktree(w.name, w.worktree_created === true);
+            cleanedWorktrees.add(w.name);
+          }
+        } catch { /* best-effort pane/worktree cleanup */ }
+      }
+      for (const pending of pendingWorktrees) {
+        if (cleanedWorktrees.has(pending.workerName)) continue;
+        try {
+          cleanupScaledWorkerWorktree(pending.workerName, pending.created);
+        } catch { /* best-effort pending worktree cleanup */ }
       }
 
       if (paneId) {
         try {
-          execFileSync('tmux', ['kill-pane', '-t', paneId], { stdio: 'pipe' });
+          tmuxExec(['kill-pane', '-t', paneId], { stdio: 'pipe' });
         } catch { /* best-effort pane cleanup */ }
       }
 
       config.worker_count = config.workers.length;
-      config.next_worker_index = initialNextIndex;
+      config.next_worker_index = nextIndex;
       await saveTeamConfig(config, leaderCwd);
 
       return { ok: false, error };
     };
 
     for (let i = 0; i < count; i++) {
+      // Skip past any colliding worker names so stale next_worker_index
+      // values self-heal instead of causing a permanent failure loop.
+      const maxSkip = config.workers.length + count;
+      let skipped = 0;
+      while (config.workers.some((w) => w.name === `worker-${nextIndex}`) && skipped < maxSkip) {
+        nextIndex++;
+        skipped++;
+      }
       const workerIndex = nextIndex;
       nextIndex++;
       const workerName = `worker-${workerIndex}`;
       if (config.workers.some((worker) => worker.name === workerName)) {
+        // Persist the advanced index so the next call does not repeat.
+        config.next_worker_index = nextIndex;
+        await saveTeamConfig(config, leaderCwd);
         await teamAppendEvent(sanitized, {
           type: 'team_leader_nudge',
           worker: 'leader-fixed',
@@ -164,22 +229,158 @@ export async function scaleUp(
       const workerDirPath = absPath(leaderCwd, TeamPaths.workerDir(sanitized, workerName));
       await mkdir(workerDirPath, { recursive: true });
 
-      // Build startup command and create tmux pane
-      const extraEnv: Record<string, string> = {
-        OMC_TEAM_STATE_ROOT: teamStateRoot,
-        OMC_TEAM_LEADER_CWD: leaderCwd,
-        OMC_TEAM_WORKER: `${sanitized}/${workerName}`,
+      const worktree = worktreeMode === 'disabled'
+        ? null
+        : ensureWorkerWorktree(sanitized, workerName, leaderCwd, {
+          mode: worktreeMode,
+          requireCleanLeader: true,
+        });
+      if (worktree) {
+        pendingWorktrees.push({ workerName, created: worktree.created });
+      }
+      const workerCwd = worktree?.path ?? leaderCwd;
+
+      // Resolve per-worker provider/model from the team's routing snapshot
+      // (Option E stickiness — snapshot is immutable, never re-resolved).
+      // Worker's inferred role comes from the owned-task `role` field when all
+      // owned tasks agree on a single role; otherwise falls back to the
+      // caller-supplied agentType default.
+      const workerTasks = tasks.filter(t => t.owner === workerName);
+      const ownedRoles = Array.from(new Set(workerTasks.map(t => t.role).filter(Boolean) as string[]));
+      const inferredRole: string | undefined = ownedRoles.length === 1
+        ? ownedRoles[0]
+        : (workerTasks[0]
+          ? routeTaskToRole(workerTasks[0].subject, workerTasks[0].description, 'executor').role
+          : undefined);
+      const canonicalRoleSet = new Set<string>(CANONICAL_TEAM_ROLES as readonly string[]);
+      const canonical: CanonicalTeamRole | null = inferredRole
+        ? (() => {
+          const normalized = normalizeDelegationRole(inferredRole);
+          return canonicalRoleSet.has(normalized) ? (normalized as CanonicalTeamRole) : null;
+        })()
+        : null;
+
+      let workerAgentType: CliAgentType = cliAgentType;
+      let workerModel: string | undefined;
+      // Only override caller's agentType when the worker's inferred role came
+      // from an explicit `task.role` (user opt-in). Pre-patch semantics: callers
+      // passing `--agent-type codex` stay on codex regardless of task text.
+      const hasExplicitOwnedRole = ownedRoles.length === 1;
+      const routedPair = hasExplicitOwnedRole && canonical
+        ? config.resolved_routing?.[canonical]
+        : undefined;
+      if (routedPair) {
+        const { primary } = routedPair;
+        const primaryProvider = primary.provider as CliAgentType;
+        if (CLI_AGENT_TYPES.has(primaryProvider)) {
+          workerAgentType = primaryProvider;
+          workerModel = primary.model;
+        }
+      } else if (cliAgentType === 'claude') {
+        // Honor Bedrock/Vertex default-model resolution for non-routed claude workers.
+        workerModel = resolveClaudeWorkerModel(env);
+      }
+
+      // AC-8: try the resolved provider first; on trust-path / not-found
+      // failure, emit a loud warning and retry with the snapshot's Claude
+      // fallback tuple. Aborting the scale_up silently would mask a missing
+      // CLI, so we only rollback if even the fallback cannot be built.
+      const tryBuildLaunch = (
+        agentType: CliAgentType,
+        model: string | undefined,
+      ): { launchBinary: string; launchArgs: string[] } => {
+        const [launchBinary, ...launchArgs] = buildWorkerArgv(agentType, {
+          teamName: sanitized,
+          workerName,
+          cwd: workerCwd,
+          ...(model ? { model } : {}),
+        });
+        return { launchBinary, launchArgs };
       };
 
-      const cmd = buildWorkerStartCommand({
-        teamName: sanitized,
-        workerName,
-        envVars: extraEnv,
-        launchArgs: [],
-        launchBinary: 'claude',
-        launchCmd: '',
-        cwd: leaderCwd,
-      });
+      let launchBinary: string;
+      let launchArgs: string[];
+      try {
+        ({ launchBinary, launchArgs } = tryBuildLaunch(workerAgentType, workerModel));
+      } catch (primaryError) {
+        const primaryReason = primaryError instanceof Error ? primaryError.message : String(primaryError);
+        const fallbackPair = routedPair?.fallback;
+        const fallbackProvider = fallbackPair
+          ? (fallbackPair.provider as CliAgentType)
+          : ('claude' as CliAgentType);
+        const fallbackModel = fallbackPair?.model;
+
+        process.stderr.write(
+          `[team/scaling] cli_binary_missing:${workerAgentType}: ${primaryReason} — falling back to ${fallbackProvider} (AC-8)\n`,
+        );
+        await teamAppendEvent(sanitized, {
+          type: 'team_leader_nudge',
+          worker: 'leader-fixed',
+          reason: `cli_binary_missing:${workerAgentType}:${primaryReason}:fallback=${fallbackProvider}`,
+        }, leaderCwd);
+
+        try {
+          ({ launchBinary, launchArgs } = tryBuildLaunch(fallbackProvider, fallbackModel));
+          workerAgentType = fallbackProvider;
+          workerModel = fallbackModel;
+        } catch (fallbackError) {
+          const fallbackReason = fallbackError instanceof Error
+            ? fallbackError.message
+            : String(fallbackError);
+          return await rollbackScaleUp(
+            `Failed to resolve worker launch config for ${workerName} (primary=${workerAgentType}: ${primaryReason}; fallback=${fallbackProvider}: ${fallbackReason})`,
+          );
+        }
+      }
+
+      // Rebuild env using the final agentType (fallback may have swapped it).
+      const extraEnv: Record<string, string> = {
+        ...getModelWorkerEnv(sanitized, workerName, workerAgentType, env),
+        OMC_TEAM_STATE_ROOT: teamStateRoot,
+        OMC_TEAM_LEADER_CWD: leaderCwd,
+        ...(worktree ? { OMC_TEAM_WORKTREE_PATH: worktree.path, OMC_TEAM_WORKER_CWD: workerCwd } : {}),
+      };
+
+      if (worktree) {
+        try {
+          const workerOverlayParams = {
+            teamName: sanitized,
+            workerName,
+            agentType: workerAgentType,
+            tasks: tasks.map((t, idx) => ({
+              id: String(idx + 1),
+              subject: t.subject,
+              description: t.description,
+            })),
+            cwd: leaderCwd,
+            instructionStateRoot: '$OMC_TEAM_STATE_ROOT',
+          };
+          const overlayPath = await writeWorkerOverlay(workerOverlayParams);
+          const overlayContent = await readFile(overlayPath, 'utf-8');
+          installWorktreeRootAgents(sanitized, workerName, leaderCwd, worktree.path, overlayContent);
+        } catch (error) {
+          const reason = error instanceof Error ? error.message : String(error);
+          return await rollbackScaleUp(`Failed to install worker overlay for ${workerName}: ${reason}`);
+        }
+      }
+
+      let cmd: string;
+      try {
+        cmd = buildWorkerStartCommand({
+          teamName: sanitized,
+          workerName,
+          envVars: extraEnv,
+          launchArgs,
+          launchBinary,
+          cwd: workerCwd,
+        });
+      } catch (error) {
+        const reason = error instanceof Error ? error.message : String(error);
+        return await rollbackScaleUp(
+          `Failed to build worker start command for ${workerName}: ${reason}`,
+        );
+      }
+
 
       // Split from the rightmost worker pane or the leader pane
       const splitTarget = config.workers.length > 0
@@ -187,9 +388,9 @@ export async function scaleUp(
         : (config.leader_pane_id ?? '');
       const splitDirection = splitTarget === (config.leader_pane_id ?? '') ? '-h' : '-v';
 
-      const result = spawnSync('tmux', [
-        'split-window', splitDirection, '-t', splitTarget, '-d', '-P', '-F', '#{pane_id}', '-c', leaderCwd, cmd,
-      ], { encoding: 'utf-8' });
+      const result = tmuxSpawn([
+        'split-window', splitDirection, '-t', splitTarget, '-d', '-P', '-F', '#{pane_id}', '-c', workerCwd, cmd,
+      ]);
 
       if (result.status !== 0) {
         return await rollbackScaleUp(`Failed to create tmux pane for ${workerName}: ${(result.stderr || '').trim()}`);
@@ -203,7 +404,7 @@ export async function scaleUp(
       // Get PID
       let panePid: number | undefined;
       try {
-        const pidResult = spawnSync('tmux', ['display-message', '-t', paneId, '-p', '#{pane_pid}'], { encoding: 'utf-8' });
+        const pidResult = tmuxSpawn(['display-message', '-t', paneId, '-p', '#{pane_pid}']);
         const pidStr = (pidResult.stdout || '').trim();
         const parsed = Number.parseInt(pidStr, 10);
         if (Number.isFinite(parsed)) panePid = parsed;
@@ -223,8 +424,15 @@ export async function scaleUp(
         assigned_tasks: [],
         pid: panePid,
         pane_id: paneId,
-        working_dir: leaderCwd,
+        working_dir: workerCwd,
         team_state_root: teamStateRoot,
+        ...(worktree ? {
+          worktree_repo_root: leaderCwd,
+          worktree_path: worktree.path,
+          worktree_branch: worktree.branch,
+          worktree_detached: worktree.detached,
+          worktree_created: worktree.created,
+        } : {}),
       };
 
       await teamWriteWorkerIdentity(sanitized, workerName, workerInfo, leaderCwd);
@@ -241,6 +449,8 @@ export async function scaleUp(
       }
 
       addedWorkers.push(workerInfo);
+      const pendingIndex = pendingWorktrees.findIndex(pending => pending.workerName === workerName);
+      if (pendingIndex >= 0) pendingWorktrees.splice(pendingIndex, 1);
       config.workers.push(workerInfo);
       config.worker_count = config.workers.length;
       config.next_worker_index = nextIndex;
@@ -350,7 +560,9 @@ export async function scaleDown(
 
     const removedNames: string[] = [];
 
-    // Phase 1: Set workers to 'draining' status
+    // Phase 1: Set workers to 'draining' status. Worktree safety is checked
+    // after the drain/kill boundary so active workers can finish and clean up
+    // ordinary in-progress work before removal is attempted.
     for (const w of targetWorkers) {
       const drainingStatus: WorkerStatus = {
         state: 'draining',
@@ -368,8 +580,8 @@ export async function scaleDown(
         const allDrained = await Promise.all(
           targetWorkers.map(async (w) => {
             const status = await teamReadWorkerStatus(sanitized, w.name, leaderCwd);
-            const alive = w.pane_id ? await isWorkerAlive(w.pane_id) : false;
-            return status.state === 'idle' || status.state === 'done' || !alive;
+            const liveness = w.pane_id ? await getWorkerLiveness(w.pane_id) : 'dead';
+            return status.state === 'idle' || status.state === 'done' || liveness === 'dead';
           }),
         );
         if (allDrained.every(Boolean)) break;
@@ -377,7 +589,7 @@ export async function scaleDown(
       }
     }
 
-    // Phase 3: Kill tmux panes and remove from config
+    // Phase 3: Kill tmux panes after workers have had a chance to drain.
     const targetPaneIds = targetWorkers
       .map((w) => w.pane_id)
       .filter((paneId): paneId is string => typeof paneId === 'string' && paneId.trim().length > 0);
@@ -389,11 +601,35 @@ export async function scaleDown(
       cwd: leaderCwd,
     });
 
+    const liveness = await Promise.all(
+      targetWorkers.map(async (w) => (w.pane_id ? [w.name, await getWorkerLiveness(w.pane_id)] as const : [w.name, 'dead'] as const)),
+    );
+    const aliveNames = liveness.filter(([, state]) => state === 'alive').map(([name]) => name);
+    if (aliveNames.length > 0) {
+      return { ok: false, error: `Refusing to remove worker state while pane(s) are still alive: ${aliveNames.join(', ')}` };
+    }
+    const unknownNames = liveness.filter(([, state]) => state === 'unknown').map(([name]) => name);
+    if (unknownNames.length > 0) {
+      return { ok: false, error: `Refusing to remove worker state while pane liveness is unknown: ${unknownNames.join(', ')}` };
+    }
+
     for (const w of targetWorkers) {
+      if (w.worktree_path) {
+        try {
+          if (w.worktree_created) {
+            removeWorkerWorktree(sanitized, w.name, leaderCwd);
+          } else {
+            prepareWorkerWorktreeForRemoval(sanitized, w.name, leaderCwd, w.worktree_path);
+          }
+        } catch (err) {
+          const reason = err instanceof Error ? err.message : String(err);
+          return { ok: false, error: `Failed to remove worktree for ${w.name}: ${reason}` };
+        }
+      }
       removedNames.push(w.name);
     }
 
-    // Phase 4: Update config
+    // Phase 5: Update config
     const removedSet = new Set(removedNames);
     config.workers = config.workers.filter(w => !removedSet.has(w.name));
     config.worker_count = config.workers.length;

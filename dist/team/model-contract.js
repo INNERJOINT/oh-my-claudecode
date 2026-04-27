@@ -3,6 +3,7 @@ import { isAbsolute, normalize, win32 as win32Path } from 'path';
 import { validateTeamName } from './team-name.js';
 import { normalizeToCcAlias } from '../features/delegation-enforcer.js';
 import { isBedrock, isVertexAI, isProviderSpecificModelId } from '../config/models.js';
+import { isExternalLLMDisabled } from '../lib/security-config.js';
 const resolvedPathCache = new Map();
 const UNTRUSTED_PATH_PATTERNS = [
     /^\/tmp(\/|$)/,
@@ -121,9 +122,10 @@ const CONTRACTS = {
         agentType: 'codex',
         binary: 'codex',
         installInstructions: 'Install Codex CLI: npm install -g @openai/codex',
-        supportsPromptMode: true,
-        // Codex accepts prompt as a positional argument (no flag needed):
-        //   codex [OPTIONS] [PROMPT]
+        // Team workers must be persistent interactive panes. Do not use `codex exec`
+        // or positional prompt mode here; runtime dispatch writes inbox.md and nudges
+        // the live Codex TUI with `codex` as the worker process.
+        supportsPromptMode: false,
         buildLaunchArgs(model, extraFlags = []) {
             const args = ['--dangerously-bypass-approvals-and-sandbox'];
             if (model)
@@ -155,7 +157,7 @@ const CONTRACTS = {
         binary: 'gemini',
         installInstructions: 'Install Gemini CLI: npm install -g @google/gemini-cli',
         supportsPromptMode: true,
-        promptModeFlag: '-i',
+        promptModeFlag: '-p',
         buildLaunchArgs(model, extraFlags = []) {
             const args = ['--approval-mode', 'yolo'];
             if (model)
@@ -166,11 +168,33 @@ const CONTRACTS = {
             return rawOutput.trim();
         },
     },
+    cursor: {
+        agentType: 'cursor',
+        binary: 'cursor-agent',
+        installInstructions: 'Install Cursor Agent CLI: see https://docs.cursor.com/cli',
+        // cursor-agent runs as an interactive REPL — no exit-on-complete prompt mode.
+        // Keep supportsPromptMode false so the verdict-file contract path
+        // (CONTRACT_ROLES + shouldInjectContract) skips this provider; cursor
+        // workers participate as executors only.
+        supportsPromptMode: false,
+        buildLaunchArgs(_model, extraFlags = []) {
+            // Minimal flags — cursor-agent owns its own session/auth state.
+            // The model is selected interactively inside cursor-agent itself.
+            return [...extraFlags];
+        },
+        parseOutput(rawOutput) {
+            return rawOutput.trim();
+        },
+    },
 };
 export function getContract(agentType) {
     const contract = CONTRACTS[agentType];
     if (!contract) {
         throw new Error(`Unknown agent type: ${agentType}. Supported: ${Object.keys(CONTRACTS).join(', ')}`);
+    }
+    if (agentType !== 'claude' && isExternalLLMDisabled()) {
+        throw new Error(`External LLM provider "${agentType}" is blocked by security policy (disableExternalLLM). ` +
+            `Only Claude workers are allowed in the current security configuration.`);
     }
     return contract;
 }
@@ -313,6 +337,11 @@ export function isPromptModeAgent(agentType) {
  * handles bare aliases fine).
  */
 export function resolveClaudeWorkerModel(env = process.env) {
+    // When force-inherit routing is enabled, do not resolve/override worker model.
+    // This preserves parent model inheritance and avoids alias normalization drift.
+    if (env.OMC_ROUTING_FORCE_INHERIT === 'true') {
+        return undefined;
+    }
     // Only needed for non-standard providers
     if (!isBedrock() && !isVertexAI()) {
         return undefined;
@@ -345,7 +374,7 @@ export function getPromptModeArgs(agentType, instruction) {
     if (!contract.supportsPromptMode) {
         return [];
     }
-    // If a flag is defined (e.g. gemini's '-i'), prepend it; otherwise the
+    // If a flag is defined (e.g. gemini's '-p'), prepend it; otherwise the
     // instruction is passed as a positional argument (e.g. codex [PROMPT]).
     if (contract.promptModeFlag) {
         return [contract.promptModeFlag, instruction];

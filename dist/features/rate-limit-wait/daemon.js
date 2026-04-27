@@ -55,7 +55,7 @@ const DAEMON_ENV_ALLOWLIST = [
     // Shell
     'SHELL',
     // Node.js
-    'NODE_ENV',
+    'NODE_ENV', 'NODE_EXTRA_CA_CERTS',
     // Proxy settings
     'HTTP_PROXY', 'HTTPS_PROXY', 'http_proxy', 'https_proxy', 'NO_PROXY', 'no_proxy',
     // Windows system
@@ -258,6 +258,16 @@ function createInitialState() {
     };
 }
 /**
+ * Only a confirmed transition out of quota exhaustion should trigger pane resume.
+ * Degraded/stale usage-api 429 responses are visible to users but must not act
+ * like a real all-clear signal for blocked panes.
+ */
+export function shouldResumeBlockedPanesOnStatusChange(previousStatus, nextStatus) {
+    const wasLimited = shouldMonitorBlockedPanes(previousStatus);
+    const isNowLimited = shouldMonitorBlockedPanes(nextStatus);
+    return wasLimited && !isNowLimited && !isRateLimitStatusDegraded(nextStatus);
+}
+/**
  * Register cleanup handlers for the daemon process.
  * Ensures PID file and state are cleaned up on exit signals.
  */
@@ -303,8 +313,8 @@ async function pollLoop(config) {
                 checkRateLimitStatus(),
                 new Promise((_, reject) => setTimeout(() => reject(new Error('checkRateLimitStatus timed out after 30s')), 30_000)),
             ]);
-            const wasLimited = shouldMonitorBlockedPanes(state.rateLimitStatus);
             const isNowLimited = shouldMonitorBlockedPanes(rateLimitStatus);
+            const shouldResumeBlockedPanes = shouldResumeBlockedPanesOnStatusChange(state.rateLimitStatus, rateLimitStatus);
             state.rateLimitStatus = rateLimitStatus;
             if (rateLimitStatus) {
                 log(`Rate limit status: ${formatRateLimitStatus(rateLimitStatus)}`, config);
@@ -314,11 +324,8 @@ async function pollLoop(config) {
             }
             // If currently rate limited, scan for blocked panes
             if (isNowLimited && isTmuxAvailable()) {
-                const scanReason = rateLimitStatus?.isLimited
-                    ? 'Rate limited - scanning for blocked panes'
-                    : 'Usage API degraded (429/stale cache) - scanning for blocked panes';
-                log(scanReason, config);
-                const blockedPanes = scanForBlockedPanes(config.paneLinesToCapture);
+                log('Rate limited - scanning for blocked panes', config);
+                const blockedPanes = scanForBlockedPanes(config.paneLinesToCapture, dirname(config.stateFilePath));
                 // Add newly detected blocked panes
                 for (const pane of blockedPanes) {
                     const existing = state.blockedPanes.find((p) => p.id === pane.id);
@@ -331,7 +338,7 @@ async function pollLoop(config) {
                 state.blockedPanes = state.blockedPanes.filter((tracked) => blockedPanes.some((current) => current.id === tracked.id));
             }
             // If rate limit just cleared (was limited, now not), attempt resume
-            if (wasLimited && !isNowLimited && state.blockedPanes.length > 0) {
+            if (shouldResumeBlockedPanes && state.blockedPanes.length > 0) {
                 log('Rate limit cleared! Attempting to resume blocked panes', config);
                 for (const pane of state.blockedPanes) {
                     if (state.resumedPaneIds.includes(pane.id)) {
@@ -561,7 +568,7 @@ export async function detectBlockedPanes(config) {
         };
     }
     const rateLimitStatus = await checkRateLimitStatus();
-    const blockedPanes = scanForBlockedPanes(cfg.paneLinesToCapture);
+    const blockedPanes = scanForBlockedPanes(cfg.paneLinesToCapture, dirname(cfg.stateFilePath));
     return {
         success: true,
         message: formatBlockedPanesSummary(blockedPanes),

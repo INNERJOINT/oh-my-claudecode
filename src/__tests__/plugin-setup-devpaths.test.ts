@@ -7,52 +7,32 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const PACKAGE_ROOT = join(__dirname, '..', '..');
 const PLUGIN_SETUP_PATH = join(PACKAGE_ROOT, 'scripts', 'plugin-setup.mjs');
+const HUD_WRAPPER_TEMPLATE = join(PACKAGE_ROOT, 'scripts', 'lib', 'hud-wrapper-template.txt');
 
 /**
- * Regression test for duplicate devPaths in plugin-setup.mjs HUD wrapper.
+ * Plan binary-weaving-mountain replaced the brittle hardcoded `devPaths`
+ * + `OMC_DEV=1` branch with a single `process.env.OMC_PLUGIN_ROOT` resolution
+ * step set automatically by `omc --plugin-dir <path>`.
  *
- * The generated HUD wrapper script (omc-hud.mjs) had 4 entries in the
- * devPaths array where entries 3-4 were exact duplicates of entries 1-2.
- * This test ensures devPaths contains no duplicate entries.
+ * This test guards the migration: the dev-paths array must be GONE from
+ * both install paths, and the new env-var step must be present in the
+ * shared wrapper template.
  */
-describe('plugin-setup.mjs devPaths deduplication', () => {
-  const scriptContent = existsSync(PLUGIN_SETUP_PATH)
-    ? readFileSync(PLUGIN_SETUP_PATH, 'utf-8')
-    : '';
-
-  it('script file exists', () => {
-    expect(existsSync(PLUGIN_SETUP_PATH)).toBe(true);
+describe('HUD wrapper devPaths removal (binary-weaving-mountain)', () => {
+  it('plugin-setup.mjs no longer contains an inline devPaths array', () => {
+    const content = readFileSync(PLUGIN_SETUP_PATH, 'utf-8');
+    expect(content).not.toMatch(/const devPaths\s*=\s*\[/);
+    expect(content).not.toContain('Workspace/oh-my-claudecode/dist/hud/index.js');
+    expect(content).not.toContain('OMC_DEV');
   });
 
-  it('devPaths array has no duplicate entries', () => {
-    // Extract the devPaths array block from the script
-    const devPathsMatch = scriptContent.match(
-      /const devPaths\s*=\s*\[([\s\S]*?)\];/
-    );
-    expect(devPathsMatch).not.toBeNull();
-
-    // Extract individual path strings from the array
-    const arrayContent = devPathsMatch![1];
-    const pathEntries = arrayContent
-      .split('\n')
-      .map(line => line.trim())
-      .filter(line => line.startsWith('join('));
-
-    // Verify no duplicates
-    const uniqueEntries = new Set(pathEntries);
-    expect(pathEntries.length).toBe(uniqueEntries.size);
-    expect(pathEntries.length).toBeGreaterThan(0);
-  });
-
-  it('devPaths contains both Workspace and workspace variants', () => {
-    // Ensure we still have both case variants (capital W and lowercase w)
-    const devPathsMatch = scriptContent.match(
-      /const devPaths\s*=\s*\[([\s\S]*?)\];/
-    );
-    expect(devPathsMatch).not.toBeNull();
-
-    const arrayContent = devPathsMatch![1];
-    expect(arrayContent).toContain('"Workspace/oh-my-claudecode/dist/hud/index.js"');
-    expect(arrayContent).toContain('"workspace/oh-my-claudecode/dist/hud/index.js"');
+  it('shared HUD wrapper template exists and uses OMC_PLUGIN_ROOT', () => {
+    expect(existsSync(HUD_WRAPPER_TEMPLATE)).toBe(true);
+    const content = readFileSync(HUD_WRAPPER_TEMPLATE, 'utf-8');
+    expect(content).toContain('OMC_PLUGIN_ROOT');
+    expect(content).toContain('dist/hud/index.js');
+    expect(content).not.toContain('OMC_DEV');
+    expect(content).not.toContain('Workspace/oh-my-claudecode');
+    expect(content).not.toContain('projects/oh-my-claudecode');
   });
 });

@@ -12,6 +12,73 @@ import { atomicWriteFileSync } from './lib/atomic-write.mjs';
 const RETRY_WINDOW_MS = 60000; // 60 seconds
 const MAX_ERROR_LENGTH = 500;
 const MAX_INPUT_PREVIEW_LENGTH = 200;
+const OPTIONAL_STARTUP_READ_TOOL_NAMES = new Set([
+  'mcp__omx_state__state_read',
+  'mcp__omx_state__state_get_status',
+  'mcp__omx_state__state_list_active',
+  'mcp__omx_memory__notepad_read',
+  'mcp__omx_memory__project_memory_read',
+]);
+
+function getToolInputCommand(toolInput) {
+  if (typeof toolInput === 'string') {
+    return toolInput;
+  }
+  if (!toolInput || typeof toolInput !== 'object') {
+    return '';
+  }
+
+  const candidateKeys = ['command', 'cmd', 'bash_command', 'script', 'query'];
+  for (const key of candidateKeys) {
+    const value = toolInput[key];
+    if (typeof value === 'string' && value.trim()) {
+      return value;
+    }
+  }
+
+  return '';
+}
+
+function isPermissionDeniedScanLine(line) {
+  return /^(?:find|grep|rg): .*permission denied$/i.test(line.trim());
+}
+
+function shouldSuppressFilesystemScanPermissionNoise(toolName, toolInput, error) {
+  if (String(toolName || '').toLowerCase() !== 'bash') {
+    return false;
+  }
+
+  const command = getToolInputCommand(toolInput).trim();
+  if (!command) {
+    return false;
+  }
+
+  const looksLikeBroadScan =
+    /\bAGENTS\.md\b/i.test(command) ||
+    /\b(?:find|grep|rg)\b[\s\S]*?(?:\.\.|\/)/i.test(command);
+  if (!looksLikeBroadScan) {
+    return false;
+  }
+
+  const lines = String(error || '')
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  const permissionLines = lines.filter(isPermissionDeniedScanLine);
+  if (permissionLines.length === 0) {
+    return false;
+  }
+
+  const nonNoiseLines = lines.filter((line) => {
+    if (isPermissionDeniedScanLine(line)) return false;
+    if (/^(?:command failed with exit code \d+:|exit code \d+)$/i.test(line)) return false;
+    if (line === command) return false;
+    return true;
+  });
+
+  return nonNoiseLines.length === 0;
+}
 
 // Validate that targetPath is contained within basePath (prevent path traversal)
 function isPathContained(targetPath, basePath) {
@@ -110,6 +177,14 @@ function writeErrorState(stateDir, toolName, toolInputPreview, error, retryCount
   } catch {}
 }
 
+function shouldSuppressOptionalStartupMethodNotFound(toolName, error) {
+  if (!OPTIONAL_STARTUP_READ_TOOL_NAMES.has(toolName)) {
+    return false;
+  }
+
+  return /\bmethod not found\b/i.test(String(error || ''));
+}
+
 async function main() {
   try {
     const input = await readStdin();
@@ -130,6 +205,16 @@ async function main() {
 
     // Skip if no tool name or error
     if (!toolName || !error) {
+      console.log(JSON.stringify({ continue: true, suppressOutput: true }));
+      return;
+    }
+
+    if (shouldSuppressOptionalStartupMethodNotFound(toolName, error)) {
+      console.log(JSON.stringify({ continue: true, suppressOutput: true }));
+      return;
+    }
+
+    if (shouldSuppressFilesystemScanPermissionNoise(toolName, toolInput, error)) {
       console.log(JSON.stringify({ continue: true, suppressOutput: true }));
       return;
     }

@@ -1,9 +1,16 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs';
+import { join } from 'path';
+import { tmpdir } from 'os';
 import { createBuiltinSkills, getBuiltinSkill, listBuiltinSkillNames, clearSkillsCache } from '../features/builtin-skills/skills.js';
 
 describe('Builtin Skills', () => {
   const originalPluginRoot = process.env.CLAUDE_PLUGIN_ROOT;
   const originalPath = process.env.PATH;
+  const originalUserType = process.env.USER_TYPE;
+  const originalClaudeConfigDir = process.env.CLAUDE_CONFIG_DIR;
+  const originalCwd = process.cwd();
+  let tempDirs: string[] = [];
 
   // Clear cache before each test to ensure fresh loads
   beforeEach(() => {
@@ -17,6 +24,18 @@ describe('Builtin Skills', () => {
     } else {
       process.env.PATH = originalPath;
     }
+    if (originalUserType === undefined) {
+      delete process.env.USER_TYPE;
+    } else {
+      process.env.USER_TYPE = originalUserType;
+    }
+    if (originalClaudeConfigDir === undefined) {
+      delete process.env.CLAUDE_CONFIG_DIR;
+    } else {
+      process.env.CLAUDE_CONFIG_DIR = originalClaudeConfigDir;
+    }
+    process.chdir(originalCwd);
+    tempDirs = [];
     clearSkillsCache();
   });
 
@@ -31,14 +50,29 @@ describe('Builtin Skills', () => {
     } else {
       process.env.PATH = originalPath;
     }
+    if (originalUserType === undefined) {
+      delete process.env.USER_TYPE;
+    } else {
+      process.env.USER_TYPE = originalUserType;
+    }
+    if (originalClaudeConfigDir === undefined) {
+      delete process.env.CLAUDE_CONFIG_DIR;
+    } else {
+      process.env.CLAUDE_CONFIG_DIR = originalClaudeConfigDir;
+    }
+    process.chdir(originalCwd);
+    for (const dir of tempDirs) {
+      rmSync(dir, { recursive: true, force: true });
+    }
+    tempDirs = [];
     clearSkillsCache();
   });
 
   describe('createBuiltinSkills()', () => {
-    it('should return correct number of skills (31 canonical + 1 alias)', () => {
+    it('should return correct number of skills (34 canonical + 1 alias)', () => {
       const skills = createBuiltinSkills();
-      // 32 entries: 31 canonical skills + 1 deprecated alias (psm)
-      expect(skills).toHaveLength(32);
+      // 35 entries: 34 canonical skills + 1 deprecated alias (psm)
+      expect(skills).toHaveLength(35);
     });
 
     it('should return an array of BuiltinSkill objects', () => {
@@ -90,6 +124,7 @@ describe('Builtin Skills', () => {
       const expectedSkills = [
         'ask',
         'ai-slop-cleaner',
+        'autoresearch',
         'autopilot',
         'cancel',
         'ccg',
@@ -112,6 +147,7 @@ describe('Builtin Skills', () => {
         'ralplan',
         'release',
         'sciomc',
+        'self-improve',
         'setup',
         'skill',
         'team',
@@ -119,6 +155,7 @@ describe('Builtin Skills', () => {
         'ultraqa',
         'ultrawork',
         'visual-verdict',
+        'wiki',
         'writer-memory',
       ];
 
@@ -155,6 +192,35 @@ describe('Builtin Skills', () => {
       expect(skill?.template).toContain('skills/project-session-manager');
       expect(skill?.template).toContain('`lib/`');
       expect(skill?.template).toContain('`psm.sh`');
+    });
+
+    it('stages mcp-setup AskUserQuestion menus so each prompt stays within the current option limit', () => {
+      const skill = getBuiltinSkill('mcp-setup');
+      expect(skill).toBeDefined();
+
+      const template = skill!.template;
+      expect(template).toContain('no more than 3 options per question');
+
+      const blocks = template
+        .split(/AskUserQuestion(?: with [^:\n]+)?[:]?/g)
+        .slice(1)
+        .map((block) => block.split(/## Step|### Step|### For |## Custom MCP Server/)[0]);
+
+      expect(blocks.length).toBeGreaterThanOrEqual(3);
+
+      for (const block of blocks) {
+        const optionLines = block
+          .split('\n')
+          .map((line) => line.trim())
+          .filter((line) => /^\d+\. \*\*/.test(line));
+        expect(optionLines.length).toBeLessThanOrEqual(3);
+      }
+
+      expect(template).toContain('Recommended starter setup');
+      expect(template).toContain('Individual popular server');
+      expect(template).toContain('More server choices');
+      expect(template).not.toContain('5. **All of the above**');
+      expect(template).not.toContain('6. **Custom**');
     });
 
     it('should emphasize process-first install routing in the setup skill', () => {
@@ -243,24 +309,187 @@ describe('Builtin Skills', () => {
       expect(skill?.template).toContain('Ontology-style question for scope-fuzzy tasks');
       expect(skill?.template).toContain('Every round explicitly names the weakest dimension and why it is the next target');
       expect(skill?.argumentHint).toContain('--autoresearch');
-      expect(skill?.template).toContain('zero-learning-curve setup lane for `omc autoresearch`');
-      expect(skill?.template).toContain('autoresearch --mission "<mission>" --eval "<evaluator>"');
+      expect(skill?.template).toContain('zero-learning-curve setup lane for the stateful `autoresearch` skill');
+      expect(skill?.template).toContain('Skill("oh-my-claudecode:autoresearch")');
+    });
+
+    it('loads deep-interview ambiguityThreshold from settings before state init and updates the announcement copy', () => {
+      const profileDir = mkdtempSync(join(tmpdir(), 'omc-skill-profile-'));
+      const projectDir = mkdtempSync(join(tmpdir(), 'omc-skill-project-'));
+      tempDirs.push(profileDir, projectDir);
+
+      process.env.CLAUDE_CONFIG_DIR = profileDir;
+      writeFileSync(
+        join(profileDir, 'settings.json'),
+        JSON.stringify({ omc: { deepInterview: { ambiguityThreshold: 0.15 } } }),
+      );
+
+      mkdirSync(join(projectDir, '.claude'), { recursive: true });
+      writeFileSync(
+        join(projectDir, '.claude', 'settings.json'),
+        JSON.stringify({ omc: { deepInterview: { ambiguityThreshold: 0.12 } } }),
+      );
+
+      process.chdir(projectDir);
+      clearSkillsCache();
+
+      const skill = getBuiltinSkill('deep-interview');
+      expect(skill).toBeDefined();
+      expect(skill?.template).toContain('Load runtime settings');
+      expect(skill?.template).toContain('Resolve `omc.deepInterview.ambiguityThreshold` into `0.12`');
+      expect(skill?.template).toContain('"threshold": 0.12,');
+      expect(skill?.template).toContain('drops below 12%.');
+      expect(skill?.template?.indexOf('Load runtime settings')).toBeLessThan(
+        skill?.template?.indexOf('Initialize state') ?? Number.POSITIVE_INFINITY,
+      );
+    });
+
+    it('refreshes cached deep-interview output when the configured threshold changes without requiring manual cache clearing', () => {
+      const projectDir = mkdtempSync(join(tmpdir(), 'omc-skill-cache-refresh-'));
+      tempDirs.push(projectDir);
+
+      mkdirSync(join(projectDir, '.claude'), { recursive: true });
+      process.chdir(projectDir);
+
+      writeFileSync(
+        join(projectDir, '.claude', 'settings.json'),
+        JSON.stringify({ omc: { deepInterview: { ambiguityThreshold: 0.12 } } }),
+      );
+
+      const first = getBuiltinSkill('deep-interview');
+      expect(first?.template).toContain('Resolve `omc.deepInterview.ambiguityThreshold` into `0.12`');
+      expect(first?.template).toContain('"threshold": 0.12,');
+
+      writeFileSync(
+        join(projectDir, '.claude', 'settings.json'),
+        JSON.stringify({ omc: { deepInterview: { ambiguityThreshold: 0.33 } } }),
+      );
+
+      const second = getBuiltinSkill('deep-interview');
+      expect(second?.template).toContain('Resolve `omc.deepInterview.ambiguityThreshold` into `0.33`');
+      expect(second?.template).toContain('"threshold": 0.33,');
+      expect(second?.template).not.toContain('Resolve `omc.deepInterview.ambiguityThreshold` into `0.12`');
+      expect(second?.template).not.toContain('"threshold": 0.12,');
+    });
+
+    it('replaces all hardcoded 20%/0.2 threshold references in deep-interview template (issue #2545)', () => {
+      const profileDir = mkdtempSync(join(tmpdir(), 'omc-skill-2545-'));
+      tempDirs.push(profileDir);
+
+      process.env.CLAUDE_CONFIG_DIR = profileDir;
+      writeFileSync(
+        join(profileDir, 'settings.json'),
+        JSON.stringify({ omc: { deepInterview: { ambiguityThreshold: 0.15 } } }),
+      );
+
+      clearSkillsCache();
+
+      const skill = getBuiltinSkill('deep-interview');
+      expect(skill).toBeDefined();
+      const t = skill!.template;
+
+      // Previously-fixed references (regression guard)
+      expect(t).toContain('"threshold": 0.15,');
+      expect(t).toContain('drops below 15%.');
+
+      expect(t).toContain('resolved threshold for this run'); // Purpose/Execution_Policy
+      expect(t).toContain('Gate: ≤15% ambiguity');    // ASCII pipeline diagram
+      expect(t).toContain('(threshold: 15%)');        // Early-exit example message
+      expect(t).toContain('ambiguity ≤ 15%');         // Advanced pipeline description
+      expect(t).toContain('"ambiguityThreshold": 0.15,'); // Advanced config snippet
+
+      // Ensure none of the conflicting hardcoded 20% signals remain at those sites
+      expect(t).not.toContain('(default: 20%)');
+      expect(t).not.toContain('(default 0.2)');
+      expect(t).not.toContain('Gate: ≤20% ambiguity');
+      expect(t).not.toContain('(threshold: 20%).');
+      expect(t).not.toContain('ambiguity ≤ 20%');
+      expect(t).not.toContain('"ambiguityThreshold": 0.2,');
+    });
+
+    it('ships a config-aware deep-interview SKILL.md for native skill-loader paths (issue #2723)', () => {
+      const raw = readFileSync(join(originalCwd, 'skills', 'deep-interview', 'SKILL.md'), 'utf-8');
+      expect(raw).toContain('Load runtime settings');
+      expect(raw).toContain('Read `[$CLAUDE_CONFIG_DIR|~/.claude]/settings.json` and `./.claude/settings.json`');
+      expect(raw).toContain('"threshold": <resolvedThreshold>,');
+      expect(raw).toContain('ambiguity drops below <resolvedThresholdPercent>');
+      expect(raw).toContain('Gate: ≤<resolvedThresholdPercent> ambiguity');
+      expect(raw).toContain('"ambiguityThreshold": <resolvedThreshold>,');
+      expect(raw).toContain('At or below the resolved threshold');
+      expect(raw).toContain('Normalize oversized initial context before state init');
+      expect(raw).toContain('prompt-safe initial-context summary');
+      expect(raw).toContain('Wait until the summary exists before ambiguity scoring');
+      expect(raw).toContain('Do not ask the next `AskUserQuestion`, score ambiguity, or hand off to execution from an over-budget raw transcript.');
+      expect(raw).toContain('Preserve the AskUserQuestion path for OMC-native interaction');
+
+      expect(raw).not.toContain('omx question');
+      expect(raw).not.toContain('(default: 20%)');
+      expect(raw).not.toContain('(default 0.2)');
+      expect(raw).not.toContain('"threshold": 0.2,');
+      expect(raw).not.toContain('ambiguity drops below 20%');
+      expect(raw).not.toContain('Gate: ≤20% ambiguity');
+      expect(raw).not.toContain('(threshold: 20%).');
+      expect(raw).not.toContain('"ambiguityThreshold": 0.2,');
+      expect(raw).not.toContain('ambiguity ≤ 20%');
+    });
+
+    it('renders deep-interview summary-gate hardening while preserving AskUserQuestion transport', () => {
+      const skill = getBuiltinSkill('deep-interview');
+      expect(skill).toBeDefined();
+      const t = skill!.template;
+
+      expect(t).toContain('Normalize oversized initial context before state init');
+      expect(t).toContain('prompt-safe initial-context summary');
+      expect(t).toContain('Wait until the summary exists before ambiguity scoring');
+      expect(t).toContain('Do not ask the next `AskUserQuestion`, score ambiguity, or hand off to execution from an over-budget raw transcript.');
+      expect(t).toContain('Preserve the AskUserQuestion path for OMC-native interaction');
+      expect(t).toContain('Initial Context Summarized: {yes|no}');
+      expect(t).not.toContain('omx question');
     });
 
     it('rewrites built-in skill command examples to plugin-safe bridge invocations when omc is unavailable', () => {
       process.env.CLAUDE_PLUGIN_ROOT = '/plugin-root';
       process.env.PATH = '';
+      // Simulate a non-Claude-session context: the ask-skill rewriter only keeps
+      // `omc ask` form when running *inside* an active Claude session, so we must
+      // clear the session-detection vars that may leak in from the test runner.
+      const savedClaudeCode = process.env.CLAUDECODE;
+      const savedSessionId = process.env.CLAUDE_SESSION_ID;
+      const savedCodeSessionId = process.env.CLAUDECODE_SESSION_ID;
+      delete process.env.CLAUDECODE;
+      delete process.env.CLAUDE_SESSION_ID;
+      delete process.env.CLAUDECODE_SESSION_ID;
       clearSkillsCache();
 
-      const deepInterviewSkill = getBuiltinSkill('deep-interview');
-      const askSkill = getBuiltinSkill('ask');
+      try {
+        const deepInterviewSkill = getBuiltinSkill('deep-interview');
+        const askSkill = getBuiltinSkill('ask');
 
-      expect(deepInterviewSkill?.template)
-        .toContain('zero-learning-curve setup lane for `node "$CLAUDE_PLUGIN_ROOT"/bridge/cli.cjs autoresearch`');
-      expect(deepInterviewSkill?.template)
-        .toContain('node "$CLAUDE_PLUGIN_ROOT"/bridge/cli.cjs autoresearch --mission "<mission>" --eval "<evaluator>"');
-      expect(askSkill?.template)
-        .toContain('node "$CLAUDE_PLUGIN_ROOT"/bridge/cli.cjs ask {{ARGUMENTS}}');
+        expect(deepInterviewSkill?.template)
+          .toContain('zero-learning-curve setup lane for the stateful `autoresearch` skill');
+        expect(deepInterviewSkill?.template)
+          .toContain('Skill("oh-my-claudecode:autoresearch")');
+        expect(askSkill?.template)
+          .toContain('node "$CLAUDE_PLUGIN_ROOT"/bridge/cli.cjs ask {{ARGUMENTS}}');
+      } finally {
+        if (savedClaudeCode === undefined) delete process.env.CLAUDECODE;
+        else process.env.CLAUDECODE = savedClaudeCode;
+        if (savedSessionId === undefined) delete process.env.CLAUDE_SESSION_ID;
+        else process.env.CLAUDE_SESSION_ID = savedSessionId;
+        if (savedCodeSessionId === undefined) delete process.env.CLAUDECODE_SESSION_ID;
+        else process.env.CLAUDECODE_SESSION_ID = savedCodeSessionId;
+      }
+    });
+
+    it('should retrieve the autoresearch skill by name', () => {
+      const skill = getBuiltinSkill('autoresearch');
+      expect(skill).toBeDefined();
+      expect(skill?.name).toBe('autoresearch');
+      expect(skill?.template).toContain('stateful skill for bounded, evaluator-driven iterative improvement');
+      expect(skill?.template).toContain('Single-mission only in v1');
+      expect(skill?.template).toContain('max-runtime ceiling');
+      expect(skill?.template).toContain('per-iteration evaluation JSON');
+      expect(skill?.template).toContain('markdown decision logs');
     });
 
     it('should expose pipeline metadata for omc-plan handoff into autopilot', () => {
@@ -307,6 +536,16 @@ describe('Builtin Skills', () => {
       expect(skill?.template).toContain('/oh-my-claudecode:team');
     });
 
+    it('should preserve the multi-repo omc-teams cwd and plan-path contract', () => {
+      const skill = getBuiltinSkill('omc-teams');
+      expect(skill).toBeDefined();
+      expect(skill?.template).toContain('shared workspace root');
+      expect(skill?.template).toContain('absolute plan path');
+      expect(skill?.template).toContain('--cwd <workspace-root>');
+      expect(skill?.template).toContain('Do not anchor the launch cwd to only the repo containing `.omc/plans/...`');
+      expect(skill?.template).toContain('single-cwd constraint');
+    });
+
     it('should be case-insensitive', () => {
       const skillLower = getBuiltinSkill('autopilot');
       const skillUpper = getBuiltinSkill('AUTOPILOT');
@@ -329,14 +568,16 @@ describe('Builtin Skills', () => {
     it('should return canonical skill names by default', () => {
       const names = listBuiltinSkillNames();
 
-      expect(names).toHaveLength(31);
+      expect(names).toHaveLength(34);
       expect(names).toContain('ai-slop-cleaner');
       expect(names).toContain('ask');
       expect(names).toContain('autopilot');
+      expect(names).toContain('autoresearch');
       expect(names).toContain('cancel');
       expect(names).toContain('ccg');
       expect(names).toContain('configure-notifications');
       expect(names).toContain('ralph');
+      expect(names).toContain('self-improve');
       expect(names).toContain('ultrawork');
       expect(names).toContain('omc-plan');
       expect(names).toContain('omc-reference');
@@ -348,6 +589,7 @@ describe('Builtin Skills', () => {
       expect(names).toContain('setup');
       expect(names).toContain('trace');
       expect(names).toContain('visual-verdict');
+      expect(names).toContain('wiki');
       expect(names).not.toContain('swarm'); // removed in #1131
       expect(names).not.toContain('psm');
     });
@@ -363,10 +605,13 @@ describe('Builtin Skills', () => {
       const names = listBuiltinSkillNames({ includeAliases: true });
 
       // swarm alias removed in #1131, psm still exists
-      expect(names).toHaveLength(32);
+      expect(names).toHaveLength(35);
       expect(names).toContain('ai-slop-cleaner');
+      expect(names).toContain('autoresearch');
+      expect(names).toContain('self-improve');
       expect(names).toContain('trace');
       expect(names).toContain('visual-verdict');
+      expect(names).toContain('wiki');
       expect(names).not.toContain('swarm');
       expect(names).toContain('psm');
     });
@@ -391,6 +636,29 @@ describe('Builtin Skills', () => {
 
     it('should not return a skill for "clear" via getBuiltinSkill', () => {
       expect(getBuiltinSkill('clear')).toBeUndefined();
+    });
+  });
+
+  describe('skininthegamebros-only builtin skills', () => {
+    it('keeps skininthegamebros-only skills hidden by default', () => {
+      const names = listBuiltinSkillNames({ includeAliases: true });
+      expect(names).not.toContain('remember');
+      expect(names).not.toContain('verify');
+      expect(names).not.toContain('debug');
+      expect(names).not.toContain('skillify');
+    });
+
+    it('surfaces skininthegamebros-only skills when USER_TYPE=ant', () => {
+      process.env.USER_TYPE = 'ant';
+      clearSkillsCache();
+
+      const names = listBuiltinSkillNames({ includeAliases: true });
+      expect(names).toContain('remember');
+      expect(names).toContain('verify');
+      expect(names).toContain('debug');
+      expect(names).toContain('skillify');
+      expect(names).not.toContain('stuck');
+      expect(names).not.toContain('lorem-ipsum');
     });
   });
 

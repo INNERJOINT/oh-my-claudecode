@@ -12,6 +12,12 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, unlinkSync } from 'fs
 import { z } from 'zod';
 import { atomicWriteJsonSync } from '../lib/atomic-write.js';
 import { withFileLockSync } from '../lib/file-lock.js';
+import {
+  createArtifactHandoff,
+  writeTextArtifact,
+  type ArtifactDescriptor,
+  type ArtifactRetention,
+} from '../shared/artifact-descriptor.js';
 
 export interface InteropConfig {
   sessionId: string;
@@ -27,11 +33,13 @@ export interface SharedTask {
   target: 'omc' | 'omx';
   type: 'analyze' | 'implement' | 'review' | 'test' | 'custom';
   description: string;
+  descriptionArtifact?: ArtifactDescriptor;
   context?: Record<string, unknown>;
   files?: string[];
   createdAt: string;
   status: 'pending' | 'in_progress' | 'completed' | 'failed';
   result?: string;
+  resultArtifact?: ArtifactDescriptor;
   error?: string;
   completedAt?: string;
 }
@@ -41,12 +49,38 @@ export interface SharedMessage {
   source: 'omc' | 'omx';
   target: 'omc' | 'omx';
   content: string;
+  contentArtifact?: ArtifactDescriptor;
   metadata?: Record<string, unknown>;
   timestamp: string;
   read: boolean;
 }
 
+const INTEROP_ARTIFACT_THRESHOLD_BYTES = 2048;
+type SharedStateArtifactCategory = 'task-description' | 'task-result' | 'message-content';
+
+type SharedStateTextHandoff = {
+  text: string;
+  artifact?: ArtifactDescriptor;
+};
+
 // Zod schemas for runtime validation
+const ArtifactProducerSchema = z.object({
+  system: z.enum(['omc', 'omx']),
+  component: z.string(),
+  worker: z.string().optional(),
+});
+
+const ArtifactDescriptorSchema = z.object({
+  kind: z.string(),
+  path: z.string(),
+  contentHash: z.string().optional(),
+  createdAt: z.string(),
+  producer: ArtifactProducerSchema,
+  sizeBytes: z.number().optional(),
+  retention: z.enum(['ephemeral', 'session', 'until-completion', 'persistent']),
+  expiresAt: z.string().optional(),
+});
+
 const InteropConfigSchema = z.object({
   sessionId: z.string(),
   createdAt: z.string(),
@@ -61,11 +95,13 @@ const SharedTaskSchema = z.object({
   target: z.enum(['omc', 'omx']),
   type: z.enum(['analyze', 'implement', 'review', 'test', 'custom']),
   description: z.string(),
+  descriptionArtifact: ArtifactDescriptorSchema.optional(),
   context: z.record(z.unknown()).optional(),
   files: z.array(z.string()).optional(),
   createdAt: z.string(),
   status: z.enum(['pending', 'in_progress', 'completed', 'failed']),
   result: z.string().optional(),
+  resultArtifact: ArtifactDescriptorSchema.optional(),
   error: z.string().optional(),
   completedAt: z.string().optional(),
 });
@@ -75,10 +111,65 @@ const SharedMessageSchema = z.object({
   source: z.enum(['omc', 'omx']),
   target: z.enum(['omc', 'omx']),
   content: z.string(),
+  contentArtifact: ArtifactDescriptorSchema.optional(),
   metadata: z.record(z.unknown()).optional(),
   timestamp: z.string(),
   read: z.boolean(),
 });
+
+function getInteropArtifactsDir(cwd: string, category: string): string {
+  return join(getInteropDir(cwd), 'artifacts', category);
+}
+
+function createSharedStateTextHandoff(params: {
+  cwd: string;
+  category: SharedStateArtifactCategory;
+  entityId: string;
+  body: string;
+  source: 'omc' | 'omx';
+  retention: ArtifactRetention;
+}): ReturnType<typeof createArtifactHandoff> {
+  return createArtifactHandoff({
+    body: params.body,
+    thresholdBytes: INTEROP_ARTIFACT_THRESHOLD_BYTES,
+    descriptorFactory: () => writeTextArtifact({
+      path: join(getInteropArtifactsDir(params.cwd, params.category), `${params.entityId}.md`),
+      content: params.body,
+      kind: params.category,
+      producer: {
+        system: params.source,
+        component: 'interop-shared-state',
+      },
+      retention: params.retention,
+    }),
+  });
+}
+
+function resolveSharedStateTextHandoff(params: {
+  cwd: string;
+  category: SharedStateArtifactCategory;
+  entityId: string;
+  body: string;
+  source: 'omc' | 'omx';
+  retention: ArtifactRetention;
+}): SharedStateTextHandoff {
+  const handoff = createSharedStateTextHandoff(params);
+
+  return handoff.mode === 'inline'
+    ? { text: handoff.body }
+    : { text: handoff.summary, artifact: handoff.descriptor };
+}
+
+function unlinkArtifact(descriptor?: ArtifactDescriptor): void {
+  if (!descriptor?.path) return;
+  try {
+    if (existsSync(descriptor.path)) {
+      unlinkSync(descriptor.path);
+    }
+  } catch {
+    // best-effort cleanup only
+  }
+}
 
 /**
  * Get the interop directory path for a worktree
@@ -97,11 +188,7 @@ export function initInteropSession(
   omxCwd?: string
 ): InteropConfig {
   const interopDir = getInteropDir(omcCwd);
-
-  // Ensure directory exists
-  if (!existsSync(interopDir)) {
-    mkdirSync(interopDir, { recursive: true });
-  }
+  mkdirSync(interopDir, { recursive: true });
 
   const config: InteropConfig = {
     sessionId,
@@ -152,13 +239,21 @@ export function addSharedTask(
     status: 'pending',
   };
 
-  const taskPath = join(interopDir, 'tasks', `${fullTask.id}.json`);
+  const descriptionHandoff = resolveSharedStateTextHandoff({
+    cwd,
+    category: 'task-description',
+    entityId: fullTask.id,
+    body: task.description,
+    source: task.source,
+    retention: 'until-completion',
+  });
 
-  // Ensure tasks directory exists
+  fullTask.description = descriptionHandoff.text;
+  fullTask.descriptionArtifact = descriptionHandoff.artifact;
+
+  const taskPath = join(interopDir, 'tasks', `${fullTask.id}.json`);
   const tasksDir = join(interopDir, 'tasks');
-  if (!existsSync(tasksDir)) {
-    mkdirSync(tasksDir, { recursive: true });
-  }
+  mkdirSync(tasksDir, { recursive: true });
 
   atomicWriteJsonSync(taskPath, fullTask);
 
@@ -232,6 +327,34 @@ export function updateSharedTask(
         ...updates,
       };
 
+      if (typeof updates.description === 'string') {
+        const descriptionHandoff = resolveSharedStateTextHandoff({
+          cwd,
+          category: 'task-description',
+          entityId: task.id,
+          body: updates.description,
+          source: task.source,
+          retention: 'until-completion',
+        });
+
+        updatedTask.description = descriptionHandoff.text;
+        updatedTask.descriptionArtifact = descriptionHandoff.artifact;
+      }
+
+      if (typeof updates.result === 'string') {
+        const resultHandoff = resolveSharedStateTextHandoff({
+          cwd,
+          category: 'task-result',
+          entityId: task.id,
+          body: updates.result,
+          source: task.source,
+          retention: 'until-completion',
+        });
+
+        updatedTask.result = resultHandoff.text;
+        updatedTask.resultArtifact = resultHandoff.artifact;
+      }
+
       // Set completedAt if status changed to completed/failed
       if (
         (updates.status === 'completed' || updates.status === 'failed') &&
@@ -265,13 +388,21 @@ export function addSharedMessage(
     read: false,
   };
 
-  const messagePath = join(interopDir, 'messages', `${fullMessage.id}.json`);
+  const contentHandoff = resolveSharedStateTextHandoff({
+    cwd,
+    category: 'message-content',
+    entityId: fullMessage.id,
+    body: message.content,
+    source: message.source,
+    retention: 'session',
+  });
 
-  // Ensure messages directory exists
+  fullMessage.content = contentHandoff.text;
+  fullMessage.contentArtifact = contentHandoff.artifact;
+
+  const messagePath = join(interopDir, 'messages', `${fullMessage.id}.json`);
   const messagesDir = join(interopDir, 'messages');
-  if (!existsSync(messagesDir)) {
-    mkdirSync(messagesDir, { recursive: true });
-  }
+  mkdirSync(messagesDir, { recursive: true });
 
   atomicWriteJsonSync(messagePath, fullMessage);
 
@@ -370,19 +501,15 @@ export function cleanupInterop(cwd: string, options?: {
       for (const file of files) {
         try {
           const filePath = join(tasksDir, file);
+          const content = readFileSync(filePath, 'utf-8');
+          const taskParsed = SharedTaskSchema.safeParse(JSON.parse(content));
+          if (!taskParsed.success) continue;
+          const task = taskParsed.data;
+          const taskTime = new Date(task.createdAt).getTime();
 
-          if (options?.olderThan) {
-            const content = readFileSync(filePath, 'utf-8');
-            const taskParsed = SharedTaskSchema.safeParse(JSON.parse(content));
-            if (!taskParsed.success) continue;
-            const task = taskParsed.data;
-            const taskTime = new Date(task.createdAt).getTime();
-
-            if (taskTime < cutoffTime) {
-              unlinkSync(filePath);
-              tasksDeleted++;
-            }
-          } else {
+          if (!options?.olderThan || taskTime < cutoffTime) {
+            unlinkArtifact(task.descriptionArtifact);
+            unlinkArtifact(task.resultArtifact);
             unlinkSync(filePath);
             tasksDeleted++;
           }
@@ -402,19 +529,14 @@ export function cleanupInterop(cwd: string, options?: {
       for (const file of files) {
         try {
           const filePath = join(messagesDir, file);
+          const content = readFileSync(filePath, 'utf-8');
+          const msgParsed = SharedMessageSchema.safeParse(JSON.parse(content));
+          if (!msgParsed.success) continue;
+          const message = msgParsed.data;
+          const messageTime = new Date(message.timestamp).getTime();
 
-          if (options?.olderThan) {
-            const content = readFileSync(filePath, 'utf-8');
-            const msgParsed = SharedMessageSchema.safeParse(JSON.parse(content));
-            if (!msgParsed.success) continue;
-            const message = msgParsed.data;
-            const messageTime = new Date(message.timestamp).getTime();
-
-            if (messageTime < cutoffTime) {
-              unlinkSync(filePath);
-              messagesDeleted++;
-            }
-          } else {
+          if (!options?.olderThan || messageTime < cutoffTime) {
+            unlinkArtifact(message.contentArtifact);
             unlinkSync(filePath);
             messagesDeleted++;
           }

@@ -1,7 +1,7 @@
 ---
 name: debugger
 description: Root-cause analysis, regression isolation, stack trace analysis, build/compilation error resolution
-model: claude-sonnet-4-6
+model: sonnet
 level: 3
 ---
 
@@ -71,7 +71,8 @@ level: 3
   </Tool_Usage>
 
   <Execution_Policy>
-    - Default effort: medium (systematic investigation).
+    - Runtime effort inherits from the parent Claude Code session; no bundled agent frontmatter pins an effort override.
+    - Behavioral effort guidance: medium (systematic investigation).
     - Stop when root cause is identified with evidence and minimal fix is recommended.
     - For build errors: stop when build command exits 0 and no new errors exist.
     - Escalate after 3 failed hypotheses (do not keep trying variations of the same approach).

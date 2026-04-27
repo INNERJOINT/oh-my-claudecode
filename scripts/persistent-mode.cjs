@@ -21,8 +21,11 @@ const {
   renameSync,
   statSync,
 } = require("fs");
-const { join, dirname, resolve, normalize } = require("path");
+const { execFileSync } = require("child_process");
 const { homedir } = require("os");
+const { join, dirname, resolve, normalize } = require("path");
+const { getClaudeConfigDir } = require("./lib/config-dir.cjs");
+const { resolveOmcStateRoot } = require("./lib/state-root.cjs");
 
 async function readStdin(timeoutMs = 2000) {
   return new Promise((resolve) => {
@@ -63,6 +66,10 @@ function writeJsonFile(path, data) {
   }
 }
 
+function shouldWriteStateBack(path) {
+  return Boolean(path && existsSync(path));
+}
+
 /**
  * Read the session-idle notification cooldown in seconds from ~/.omc/config.json.
  * Default: 60. 0 = disabled.
@@ -75,16 +82,139 @@ function getIdleCooldownSeconds() {
   return 60;
 }
 
+const COMMAND_TIMEOUT_MS = 10_000;
+const MAX_LIST_RESULTS = 100;
+const FAILURE_CONCLUSIONS = new Set([
+  'failure',
+  'timed_out',
+  'cancelled',
+  'action_required',
+  'startup_failure',
+]);
+
+function runCommand(command, args, cwd) {
+  try {
+    return execFileSync(command, args, {
+      cwd,
+      encoding: 'utf-8',
+      timeout: COMMAND_TIMEOUT_MS,
+      stdio: ['pipe', 'pipe', 'pipe'],
+    }).trim();
+  } catch {
+    return null;
+  }
+}
+
+function runJsonCommand(command, args, cwd) {
+  const raw = runCommand(command, args, cwd);
+  if (raw === null) return null;
+
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
+function parseGitHubRemote(remoteUrl) {
+  const normalized = remoteUrl.trim();
+  const patterns = [
+    /^https?:\/\/github\.com\/([^/]+)\/([^/]+?)(?:\.git)?$/,
+    /^git@github\.com:([^/]+)\/([^/]+?)(?:\.git)?$/,
+    /^ssh:\/\/git@github\.com\/([^/]+)\/([^/]+?)(?:\.git)?$/,
+  ];
+
+  for (const pattern of patterns) {
+    const match = normalized.match(pattern);
+    if (match) {
+      return { owner: match[1], repo: match[2] };
+    }
+  }
+
+  return null;
+}
+
+function toSortedNumbers(values) {
+  return values
+    .filter((value) => Number.isInteger(value))
+    .sort((left, right) => left - right);
+}
+
+function getIdleNotificationRepoState(directory) {
+  const remoteUrl = runCommand('git', ['remote', 'get-url', 'origin'], directory);
+  if (!remoteUrl) return null;
+
+  const remote = parseGitHubRemote(remoteUrl);
+  if (!remote) return null;
+
+  const repo = `${remote.owner}/${remote.repo}`;
+  const headSha = runCommand('git', ['rev-parse', 'HEAD'], directory);
+  const porcelainStatus = runCommand('git', ['status', '--porcelain'], directory);
+  if (!headSha || porcelainStatus === null) return null;
+
+  const openPrs = runJsonCommand('gh', ['pr', 'list', '--repo', repo, '--state', 'open', '--limit', String(MAX_LIST_RESULTS), '--json', 'number'], directory);
+  if (!openPrs) return null;
+
+  const openIssues = runJsonCommand('gh', ['issue', 'list', '--repo', repo, '--state', 'open', '--limit', String(MAX_LIST_RESULTS), '--json', 'number'], directory);
+  if (!openIssues) return null;
+
+  const runs = runJsonCommand('gh', ['run', 'list', '--repo', repo, '--limit', String(MAX_LIST_RESULTS), '--json', 'databaseId,conclusion'], directory);
+  if (!runs) return null;
+
+  const failingRunIds = toSortedNumbers(
+    runs
+      .filter((run) => FAILURE_CONCLUSIONS.has(((run.conclusion || '') + '').toLowerCase()))
+      .map((run) => run.databaseId),
+  );
+  const openPrNumbers = toSortedNumbers(openPrs.map((entry) => entry.number));
+  const openIssueNumbers = toSortedNumbers(openIssues.map((entry) => entry.number));
+
+  const snapshot = {
+    repo,
+    headSha,
+    dirty: porcelainStatus.length > 0,
+    openPrNumbers,
+    openIssueNumbers,
+    failingRunIds,
+  };
+
+  return {
+    signature: JSON.stringify(snapshot),
+    backlogZero:
+      openPrNumbers.length === 0 &&
+      openIssueNumbers.length === 0 &&
+      failingRunIds.length === 0,
+  };
+}
+
+function isRepeatedZeroBacklog(record, repoState) {
+  return Boolean(
+    repoState?.backlogZero &&
+    record?.backlogZero === true &&
+    typeof record.repoSignature === 'string' &&
+    record.repoSignature === repoState.signature,
+  );
+}
+
 /**
  * Check whether the session-idle cooldown has elapsed.
  * Returns true if the notification should be sent.
  */
-function shouldSendIdleNotification(stateDir) {
+function shouldSendIdleNotification(stateDir, repoState) {
   const cooldownSecs = getIdleCooldownSeconds();
-  if (cooldownSecs === 0) return true; // cooldown disabled
-
   const cooldownPath = join(stateDir, 'idle-notif-cooldown.json');
   const data = readJsonFile(cooldownPath);
+
+  if (isRepeatedZeroBacklog(data, repoState)) {
+    return false;
+  }
+
+  if (repoState && typeof data?.repoSignature === 'string' && data.repoSignature !== repoState.signature) {
+    return true;
+  }
+
+  if (cooldownSecs === 0) return true; // cooldown disabled
+
   if (data?.lastSentAt) {
     const elapsed = (Date.now() - new Date(data.lastSentAt).getTime()) / 1000;
     if (Number.isFinite(elapsed) && elapsed < cooldownSecs) return false;
@@ -95,9 +225,14 @@ function shouldSendIdleNotification(stateDir) {
 /**
  * Record that the session-idle notification was sent.
  */
-function recordIdleNotificationSent(stateDir) {
+function recordIdleNotificationSent(stateDir, repoState) {
   const cooldownPath = join(stateDir, 'idle-notif-cooldown.json');
-  writeJsonFile(cooldownPath, { lastSentAt: new Date().toISOString() });
+  const record = { lastSentAt: new Date().toISOString() };
+  if (repoState) {
+    record.repoSignature = repoState.signature;
+    record.backlogZero = repoState.backlogZero;
+  }
+  writeJsonFile(cooldownPath, record);
 }
 
 /**
@@ -153,6 +288,17 @@ const TEAM_TERMINAL_PHASES = new Set([
   "terminated",
   "done",
 ]);
+const RALPLAN_TERMINAL_PHASES = new Set([
+  "completed",
+  "complete",
+  "failed",
+  "cancelled",
+  "canceled",
+  "aborted",
+  "terminated",
+  "done",
+  "handoff",
+]);
 const TEAM_ACTIVE_PHASES = new Set([
   "team-plan",
   "team-prd",
@@ -198,14 +344,50 @@ function normalizeTeamPhase(state) {
   return TEAM_ACTIVE_PHASES.has(phase) ? phase : null;
 }
 
+function normalizeRalplanPhase(state) {
+  if (!state || typeof state !== "object") return null;
+
+  const rawPhase = state.current_phase ?? state.phase ?? state.status;
+  if (typeof rawPhase !== "string") return null;
+
+  const phase = rawPhase.trim().toLowerCase();
+  if (!phase) return null;
+
+  if (phase === "handoff" || phase.startsWith("handoff:") || phase.startsWith("handoff-")) {
+    return "handoff";
+  }
+
+  return phase;
+}
+
 function getSafeReinforcementCount(value) {
   return typeof value === "number" && Number.isFinite(value) && value >= 0
     ? Math.floor(value)
     : 0;
 }
 
+const AWAITING_CONFIRMATION_TTL_MS = 2 * 60 * 1000;
+
 function isAwaitingConfirmation(state) {
-  return state?.awaiting_confirmation === true;
+  if (!state || state.awaiting_confirmation !== true) {
+    return false;
+  }
+
+  const setAt =
+    state.awaiting_confirmation_set_at ||
+    state.started_at ||
+    null;
+
+  if (!setAt) {
+    return false;
+  }
+
+  const setAtMs = new Date(setAt).getTime();
+  if (!Number.isFinite(setAtMs)) {
+    return false;
+  }
+
+  return Date.now() - setAtMs < AWAITING_CONFIRMATION_TTL_MS;
 }
 
 // ---------------------------------------------------------------------------
@@ -257,30 +439,41 @@ function writeStopBreaker(stateDir, name, count, sessionId) {
  */
 function isSessionCancelInProgress(stateDir, sessionId) {
   const CANCEL_SIGNAL_TTL_MS = 30000; // 30 seconds
+  const isActiveSignal = (signalPath) => {
+    const signal = readJsonFile(signalPath);
+    if (!signal) {
+      return false;
+    }
+
+    const now = Date.now();
+    const expiresAt = signal.expires_at ? new Date(signal.expires_at).getTime() : NaN;
+    const requestedAt = signal.requested_at ? new Date(signal.requested_at).getTime() : NaN;
+    const fallbackExpiry = Number.isFinite(requestedAt) ? requestedAt + CANCEL_SIGNAL_TTL_MS : NaN;
+    const effectiveExpiry = Number.isFinite(expiresAt) ? expiresAt : fallbackExpiry;
+
+    if (Number.isFinite(effectiveExpiry) && effectiveExpiry > now) {
+      return true;
+    }
+
+    if (existsSync(signalPath)) {
+      try {
+        unlinkSync(signalPath);
+      } catch {}
+    }
+    return false;
+  };
 
   // Try session-scoped path first
   if (sessionId) {
     const sessionSignalPath = join(stateDir, 'sessions', sessionId, 'cancel-signal-state.json');
-    const signal = readJsonFile(sessionSignalPath);
-    if (signal && signal.expires_at) {
-      const expiresAt = new Date(signal.expires_at).getTime();
-      if (Date.now() < expiresAt) {
-        return true;
-      }
+    if (isActiveSignal(sessionSignalPath)) {
+      return true;
     }
   }
 
   // Fall back to legacy path
   const legacySignalPath = join(stateDir, 'cancel-signal-state.json');
-  const signal = readJsonFile(legacySignalPath);
-  if (signal && signal.expires_at) {
-    const expiresAt = new Date(signal.expires_at).getTime();
-    if (Date.now() < expiresAt) {
-      return true;
-    }
-  }
-
-  return false;
+  return isActiveSignal(legacySignalPath);
 }
 
 /**
@@ -398,7 +591,7 @@ function countIncompleteTasks(sessionId) {
   if (!sessionId || typeof sessionId !== "string") return 0;
   if (!/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,255}$/.test(sessionId)) return 0;
 
-  const cfgDir = process.env.CLAUDE_CONFIG_DIR || join(homedir(), ".claude");
+  const cfgDir = getClaudeConfigDir();
   const taskDir = join(cfgDir, "tasks", sessionId);
   if (!existsSync(taskDir)) return 0;
 
@@ -432,8 +625,7 @@ function countIncompleteTodos(sessionId, projectDir) {
     /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,255}$/.test(sessionId)
   ) {
     const sessionTodoPath = join(
-      homedir(),
-      ".claude",
+      getClaudeConfigDir(),
       "todos",
       `${sessionId}.json`,
     );
@@ -514,14 +706,16 @@ const CRITICAL_CONTEXT_STOP_PERCENT = 95;
 function estimateContextPercent(transcriptPath) {
   if (!transcriptPath || !existsSync(transcriptPath)) return 0;
 
+  let fd = -1;
   try {
     const size = statSync(transcriptPath).size;
     const readSize = 4096;
     const offset = Math.max(0, size - readSize);
     const buf = Buffer.alloc(Math.min(readSize, size));
-    const fd = openSync(transcriptPath, "r");
+    fd = openSync(transcriptPath, "r");
     readSync(fd, buf, 0, buf.length, offset);
     closeSync(fd);
+    fd = -1;
     const content = buf.toString("utf-8");
 
     const windowMatch = content.match(/"context_window"\s{0,5}:\s{0,5}(\d+)/g);
@@ -534,6 +728,8 @@ function estimateContextPercent(transcriptPath) {
     return Math.round((lastInput / lastWindow) * 100);
   } catch {
     return 0;
+  } finally {
+    if (fd !== -1) try { closeSync(fd); } catch { /* best-effort */ }
   }
 }
 
@@ -592,6 +788,35 @@ function isAuthenticationError(data) {
   );
 }
 
+function isScheduledWakeupStop(data) {
+  const stopPatterns = [
+    "schedulewakeup",
+    "schedule_wakeup",
+    "scheduled_wakeup",
+    "scheduled_task",
+    "scheduled_resume",
+    "loop_resume",
+    "loop_wakeup",
+  ];
+
+  const toolName = String(data.tool_name || data.toolName || "").toLowerCase().replace(/[\s-]+/g, "_");
+  if (stopPatterns.some((pattern) => toolName.includes(pattern))) {
+    return true;
+  }
+
+  const reasons = [
+    data.stop_reason,
+    data.stopReason,
+    data.end_turn_reason,
+    data.endTurnReason,
+    data.reason,
+  ]
+    .filter((value) => typeof value === "string" && value.trim().length > 0)
+    .map((value) => value.toLowerCase().replace(/[\s-]+/g, "_"));
+
+  return reasons.some((reason) => stopPatterns.some((pattern) => reason.includes(pattern)));
+}
+
 async function main() {
   try {
     const input = await readStdin();
@@ -602,7 +827,8 @@ async function main() {
 
     const directory = data.cwd || data.directory || process.cwd();
     const sessionId = data.session_id || data.sessionId || "";
-    const stateDir = join(directory, ".omc", "state");
+    const omcRoot = await resolveOmcStateRoot(directory);
+    const stateDir = join(omcRoot, "state");
 
     // CRITICAL: Never block context-limit stops.
     // Blocking these causes a deadlock where Claude Code cannot compact.
@@ -626,6 +852,11 @@ async function main() {
 
     // Never block auth failures (401/403/expired OAuth): allow re-auth flow.
     if (isAuthenticationError(data)) {
+      console.log(JSON.stringify({ continue: true, suppressOutput: true }));
+      return;
+    }
+
+    if (isScheduledWakeupStop(data)) {
       console.log(JSON.stringify({ continue: true, suppressOutput: true }));
       return;
     }
@@ -667,6 +898,10 @@ async function main() {
       if (iteration < maxIter) {
         ralph.state.iteration = iteration + 1;
         ralph.state.last_checked_at = new Date().toISOString();
+        if (!shouldWriteStateBack(ralph.path)) {
+          console.log(JSON.stringify({ continue: true, suppressOutput: true }));
+          return;
+        }
         writeJsonFile(ralph.path, ralph.state);
 
         // Fire-and-forget notification
@@ -685,6 +920,10 @@ async function main() {
         ralph.state.max_iterations = maxIter + 10;
         ralph.state.iteration = maxIter + 1;
         ralph.state.last_checked_at = new Date().toISOString();
+        if (!shouldWriteStateBack(ralph.path)) {
+          console.log(JSON.stringify({ continue: true, suppressOutput: true }));
+          return;
+        }
         writeJsonFile(ralph.path, ralph.state);
         const extendReason = `[RALPH LOOP - EXTENDED] Max iterations reached; extending to ${ralph.state.max_iterations} and continuing. When FULLY complete (after Architect verification), run /oh-my-claudecode:cancel (or --force).`;
         console.log(JSON.stringify({ decision: "block", reason: extendReason }));
@@ -786,14 +1025,10 @@ async function main() {
     // Priority 2.6: Ralplan (standalone consensus planning — first-class enforcement)
     if (ralplan.state?.active && !isAwaitingConfirmation(ralplan.state) && !isStaleState(ralplan.state) && isSessionMatch(ralplan.state, sessionId)) {
       // Terminal phase detection
-      const currentPhase = ralplan.state.current_phase;
-      let ralplanTerminal = false;
-      if (typeof currentPhase === "string") {
-        const terminal = ["complete", "completed", "failed", "cancelled", "canceled", "done"];
-        if (terminal.includes(currentPhase.toLowerCase())) {
-          writeStopBreaker(stateDir, "ralplan", 0, sessionId);
-          ralplanTerminal = true;
-        }
+      const currentPhase = normalizeRalplanPhase(ralplan.state);
+      const ralplanTerminal = currentPhase ? RALPLAN_TERMINAL_PHASES.has(currentPhase) : false;
+      if (ralplanTerminal) {
+        writeStopBreaker(stateDir, "ralplan", 0, sessionId);
       }
 
       if (!ralplanTerminal && !cancelInProgress) {
@@ -801,6 +1036,14 @@ async function main() {
         const breakerCount = readStopBreaker(stateDir, "ralplan", sessionId, RALPLAN_STOP_BLOCKER_TTL_MS) + 1;
         if (breakerCount > RALPLAN_STOP_BLOCKER_MAX) {
           writeStopBreaker(stateDir, "ralplan", 0, sessionId);
+
+          // Deactivate the stale ralplan state so a later Stop event cannot
+          // start a brand-new reinforcement cycle (30/30 -> 1/30) after the
+          // workflow has already exhausted its breaker budget.
+          ralplan.state.active = false;
+          ralplan.state.deactivated_reason = "stop_breaker_exhausted";
+          ralplan.state.completed_at = new Date().toISOString();
+          writeJsonFile(ralplan.path, ralplan.state);
           // Circuit breaker tripped — allow stop
         } else {
           writeStopBreaker(stateDir, "ralplan", breakerCount, sessionId);
@@ -964,8 +1207,8 @@ async function main() {
       }
     }
 
-    // Priority 8: Ultrawork - ALWAYS continue while active (not just when tasks exist)
-    // This prevents false stops from bash errors, transient failures, etc.
+    // Priority 8: Ultrawork - reinforce only while tracked work remains incomplete.
+    // This prevents false stops from bash errors or transient failures mid-task.
     // Session isolation: only block if state belongs to this session (issue #311)
     // Project isolation: only block if state belongs to this project
     if (
@@ -974,6 +1217,19 @@ async function main() {
       isSessionMatch(ultrawork.state, sessionId) &&
       isStateForCurrentProject(ultrawork.state, directory, ultrawork.isGlobal)
     ) {
+      if (totalIncomplete === 0) {
+        // Issue #2419: once tracked work is complete, auto-clear ultrawork so
+        // Stop can exit cleanly instead of forcing repeated cancel prompts.
+        try {
+          ultrawork.state.active = false;
+          ultrawork.state.deactivated_reason = 'task_completion';
+          ultrawork.state.last_checked_at = new Date().toISOString();
+          writeJsonFile(ultrawork.path, ultrawork.state);
+        } catch { /* best-effort cleanup */ }
+        console.log(JSON.stringify({ continue: true, suppressOutput: true }));
+        return;
+      }
+
       const newCount = (ultrawork.state.reinforcement_count || 0) + 1;
       const maxReinforcements = ultrawork.state.max_reinforcements || 50;
 
@@ -1067,8 +1323,9 @@ async function main() {
     // No blocking needed — Claude is truly idle.
     // Send session-idle notification (fire-and-forget) so external integrations
     // (Telegram, Discord) know the session went idle without any active mode.
-    // Per-session cooldown prevents notification spam when the session idles repeatedly.
-    if (sessionId && shouldSendIdleNotification(stateDir)) {
+    // Back off repeated zero-backlog nudges until repo state changes.
+    const idleRepoState = getIdleNotificationRepoState(directory);
+    if (sessionId && shouldSendIdleNotification(stateDir, idleRepoState)) {
       try {
         const pluginRoot = process.env.CLAUDE_PLUGIN_ROOT;
         if (pluginRoot) {
@@ -1081,7 +1338,7 @@ async function main() {
               }).catch(() => {})
             )
             .catch(() => {});
-          recordIdleNotificationSent(stateDir);
+          recordIdleNotificationSent(stateDir, idleRepoState);
         }
       } catch {
         // Notification module not available, skip silently

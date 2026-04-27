@@ -10,6 +10,12 @@ import { existsSync, mkdirSync, writeFileSync, rmSync, mkdtempSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
 
+// vi.hoisted runs before vi.mock hoisting — safe to reference in mock factories
+const { TEST_DIRS } = vi.hoisted(() => {
+  const TEST_DIRS = { claudeDir: '', projectDir: '', projectClaudeDir: '' };
+  return { TEST_DIRS };
+});
+
 let TEST_CLAUDE_DIR = '';
 let TEST_PROJECT_DIR = '';
 let TEST_PROJECT_CLAUDE_DIR = '';
@@ -18,16 +24,13 @@ function resetTestDirs(): void {
   TEST_CLAUDE_DIR = mkdtempSync(join(tmpdir(), 'omc-doctor-conflicts-claude-'));
   TEST_PROJECT_DIR = mkdtempSync(join(tmpdir(), 'omc-doctor-conflicts-project-'));
   TEST_PROJECT_CLAUDE_DIR = join(TEST_PROJECT_DIR, '.claude');
+  TEST_DIRS.claudeDir = TEST_CLAUDE_DIR;
 }
 
 // Mock getClaudeConfigDir before importing the module under test
-vi.mock('../utils/paths.js', async () => {
-  const actual = await vi.importActual<typeof import('../utils/paths.js')>('../utils/paths.js');
-  return {
-    ...actual,
-    getClaudeConfigDir: () => TEST_CLAUDE_DIR,
-  };
-});
+vi.mock('../utils/config-dir.js', () => ({
+  getClaudeConfigDir: () => TEST_DIRS.claudeDir,
+}));
 
 // Mock builtin skills to return a known list for testing
 vi.mock('../features/builtin-skills/skills.js', () => ({
@@ -580,8 +583,10 @@ describe('doctor-conflicts: config known fields (issue #1499)', () => {
         integrations: [],
       },
       team: {
-        maxAgents: 20,
-        defaultAgentType: 'executor',
+        ops: {
+          maxAgents: 20,
+          defaultAgentType: 'claude',
+        },
       },
     }, null, 2));
 

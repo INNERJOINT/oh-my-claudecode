@@ -109,6 +109,60 @@ describe('model-contract', () => {
     it('throws for unknown agent type', () => {
       expect(() => getContract('unknown' as any)).toThrow('Unknown agent type');
     });
+
+    it('blocks codex when external LLM is disabled', async () => {
+      const origSecurity = process.env.OMC_SECURITY;
+      process.env.OMC_SECURITY = 'strict';
+      try {
+        const { clearSecurityConfigCache } = await import('../../lib/security-config.js');
+        clearSecurityConfigCache();
+        expect(() => getContract('codex')).toThrow('blocked by security policy');
+      } finally {
+        if (origSecurity === undefined) {
+          delete process.env.OMC_SECURITY;
+        } else {
+          process.env.OMC_SECURITY = origSecurity;
+        }
+        const { clearSecurityConfigCache } = await import('../../lib/security-config.js');
+        clearSecurityConfigCache();
+      }
+    });
+
+    it('blocks gemini when external LLM is disabled', async () => {
+      const origSecurity = process.env.OMC_SECURITY;
+      process.env.OMC_SECURITY = 'strict';
+      try {
+        const { clearSecurityConfigCache } = await import('../../lib/security-config.js');
+        clearSecurityConfigCache();
+        expect(() => getContract('gemini')).toThrow('blocked by security policy');
+      } finally {
+        if (origSecurity === undefined) {
+          delete process.env.OMC_SECURITY;
+        } else {
+          process.env.OMC_SECURITY = origSecurity;
+        }
+        const { clearSecurityConfigCache } = await import('../../lib/security-config.js');
+        clearSecurityConfigCache();
+      }
+    });
+
+    it('allows claude even when external LLM is disabled', async () => {
+      const origSecurity = process.env.OMC_SECURITY;
+      process.env.OMC_SECURITY = 'strict';
+      try {
+        const { clearSecurityConfigCache } = await import('../../lib/security-config.js');
+        clearSecurityConfigCache();
+        expect(() => getContract('claude')).not.toThrow();
+      } finally {
+        if (origSecurity === undefined) {
+          delete process.env.OMC_SECURITY;
+        } else {
+          process.env.OMC_SECURITY = origSecurity;
+        }
+        const { clearSecurityConfigCache } = await import('../../lib/security-config.js');
+        clearSecurityConfigCache();
+      }
+    });
   });
 
   describe('buildLaunchArgs', () => {
@@ -118,6 +172,7 @@ describe('model-contract', () => {
     });
     it('codex includes --dangerously-bypass-approvals-and-sandbox', () => {
       const args = buildLaunchArgs('codex', { teamName: 't', workerName: 'w', cwd: '/tmp' });
+      expect(args).not.toContain('exec');
       expect(args).not.toContain('--full-auto');
       expect(args).toContain('--dangerously-bypass-approvals-and-sandbox');
     });
@@ -125,7 +180,7 @@ describe('model-contract', () => {
       const args = buildLaunchArgs('gemini', { teamName: 't', workerName: 'w', cwd: '/tmp' });
       expect(args).toContain('--approval-mode');
       expect(args).toContain('yolo');
-      expect(args).not.toContain('-i');
+      expect(args).not.toContain('-p');
     });
     it('passes model flag when specified', () => {
       const args = buildLaunchArgs('codex', { teamName: 't', workerName: 'w', cwd: '/tmp', model: 'gpt-4' });
@@ -214,15 +269,30 @@ describe('model-contract', () => {
   });
 
   describe('buildWorkerArgv', () => {
-    it('builds binary + args', () => {
+    it('builds codex interactive worker argv without the exec subcommand', () => {
       const mockSpawnSync = vi.mocked(spawnSync);
       mockSpawnSync.mockReturnValueOnce({ status: 1, stdout: '', stderr: '', pid: 0, output: [], signal: null } as any);
 
-      expect(buildWorkerArgv('codex', { teamName: 'my-team', workerName: 'worker-1', cwd: '/tmp' })).toEqual([
+      const argv = buildWorkerArgv('codex', { teamName: 'my-team', workerName: 'worker-1', cwd: '/tmp' });
+      expect(argv).toEqual([
         'codex',
         '--dangerously-bypass-approvals-and-sandbox',
       ]);
+      expect(argv).not.toContain('exec');
       expect(mockSpawnSync).toHaveBeenCalledWith('which', ['codex'], { timeout: 5000, encoding: 'utf8' });
+      mockSpawnSync.mockRestore();
+    });
+
+    it('builds claude interactive worker argv without the exec subcommand', () => {
+      const mockSpawnSync = vi.mocked(spawnSync);
+      mockSpawnSync.mockReturnValueOnce({ status: 1, stdout: '', stderr: '', pid: 0, output: [], signal: null } as any);
+
+      const argv = buildWorkerArgv('claude', { teamName: 'my-team', workerName: 'worker-1', cwd: '/tmp' });
+
+      expect(argv[0]).toBe('claude');
+      expect(argv).toContain('--dangerously-skip-permissions');
+      expect(argv).not.toContain('exec');
+      expect(mockSpawnSync).toHaveBeenCalledWith('which', ['claude'], { timeout: 5000, encoding: 'utf8' });
       mockSpawnSync.mockRestore();
     });
 
@@ -313,36 +383,52 @@ describe('model-contract', () => {
       expect(isPromptModeAgent('gemini')).toBe(true);
       const c = getContract('gemini');
       expect(c.supportsPromptMode).toBe(true);
-      expect(c.promptModeFlag).toBe('-i');
+      expect(c.promptModeFlag).toBe('-p');
     });
 
     it('claude does not support prompt mode', () => {
       expect(isPromptModeAgent('claude')).toBe(false);
     });
 
-    it('codex supports prompt mode (positional argument, no flag)', () => {
-      expect(isPromptModeAgent('codex')).toBe(true);
+    it('codex launches as a persistent interactive worker, not prompt/exec mode', () => {
+      expect(isPromptModeAgent('codex')).toBe(false);
       const c = getContract('codex');
-      expect(c.supportsPromptMode).toBe(true);
+      expect(c.supportsPromptMode).toBe(false);
       expect(c.promptModeFlag).toBeUndefined();
     });
 
     it('getPromptModeArgs returns flag + instruction for gemini', () => {
       const args = getPromptModeArgs('gemini', 'Read inbox');
-      expect(args).toEqual(['-i', 'Read inbox']);
+      expect(args).toEqual(['-p', 'Read inbox']);
     });
 
-    it('getPromptModeArgs returns instruction only (positional) for codex', () => {
-      const args = getPromptModeArgs('codex', 'Read inbox');
-      expect(args).toEqual(['Read inbox']);
-    });
-
-    it('getPromptModeArgs returns empty array for non-prompt-mode agents', () => {
+    it('getPromptModeArgs returns empty array for interactive codex and claude workers', () => {
+      expect(getPromptModeArgs('codex', 'Read inbox')).toEqual([]);
       expect(getPromptModeArgs('claude', 'Read inbox')).toEqual([]);
     });
   });
 
   describe('resolveClaudeWorkerModel (issue #1695)', () => {
+    it('returns undefined when OMC_ROUTING_FORCE_INHERIT=true even if Bedrock model env vars are set', () => {
+      vi.stubEnv('OMC_ROUTING_FORCE_INHERIT', 'true');
+      vi.stubEnv('CLAUDE_CODE_USE_BEDROCK', '1');
+      vi.stubEnv('ANTHROPIC_MODEL', 'us.anthropic.claude-sonnet-4-5-20250929-v1:0');
+      vi.stubEnv('CLAUDE_MODEL', 'us.anthropic.claude-opus-4-6-v1:0');
+      vi.stubEnv('CLAUDE_CODE_BEDROCK_SONNET_MODEL', 'us.anthropic.claude-sonnet-4-6-v1:0');
+      vi.stubEnv('OMC_MODEL_MEDIUM', 'us.anthropic.claude-sonnet-4-5-20250929-v1:0');
+      expect(resolveClaudeWorkerModel()).toBeUndefined();
+      vi.unstubAllEnvs();
+    });
+
+    it('returns undefined when OMC_ROUTING_FORCE_INHERIT=true on Vertex', () => {
+      vi.stubEnv('OMC_ROUTING_FORCE_INHERIT', 'true');
+      vi.stubEnv('CLAUDE_CODE_USE_BEDROCK', '');
+      vi.stubEnv('CLAUDE_CODE_USE_VERTEX', '1');
+      vi.stubEnv('ANTHROPIC_MODEL', 'vertex_ai/claude-sonnet-4-6@20250514');
+      expect(resolveClaudeWorkerModel()).toBeUndefined();
+      vi.unstubAllEnvs();
+    });
+
     it('returns undefined when not on Bedrock or Vertex', () => {
       vi.stubEnv('CLAUDE_CODE_USE_BEDROCK', '');
       vi.stubEnv('CLAUDE_CODE_USE_VERTEX', '');

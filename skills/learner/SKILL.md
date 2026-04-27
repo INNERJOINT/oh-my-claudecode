@@ -109,12 +109,37 @@ This classification ensures expertise can be updated independently without desta
 
 ### Step 4: Save Location
 
-- **User-level**: ~/.claude/skills/omc-learned/ - Rare. Only for truly portable insights.
-- **Project-level**: .omc/skills/ - Default. Version-controlled with repo.
+- **User-level**: `${CLAUDE_CONFIG_DIR:-~/.claude}/skills/omc-learned/<skill-name>.md` - Rare. Only for truly portable insights.
+- **Project-level**: `.omc/skills/<skill-name>.md` - Default. Intended to be committed with the repo when you want the team to keep the skill. In linked worktrees, uncommitted skills are still worktree-local and disappear if that worktree is deleted.
+
+### Required File Format
+
+Every learned skill file MUST start with YAML frontmatter so learned-skill flat-file discovery can load it.
+Do **not** write plain markdown without frontmatter.
+
+Minimum required frontmatter:
+
+```yaml
+---
+name: <skill-name>
+description: <one-line description>
+triggers:
+  - <trigger-1>
+  - <trigger-2>
+---
+```
 
 ### Skill Body Template
 
 ```markdown
+---
+name: <skill-name>
+description: <one-line description>
+triggers:
+  - <trigger-1>
+  - <trigger-2>
+---
+
 # [Skill Name]
 
 ## The Insight

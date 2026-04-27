@@ -25,7 +25,7 @@ function debugLog(message, ...args) {
 import { existsSync, readFileSync, readdirSync } from 'fs';
 import { join } from 'path';
 import { getOmcRoot } from '../../lib/worktree-paths.js';
-import { getClaudeConfigDir } from '../../utils/paths.js';
+import { getClaudeConfigDir } from '../../utils/config-dir.js';
 /**
  * Validates that a session ID is safe to use in file paths.
  * Session IDs should be alphanumeric with optional hyphens and underscores.
@@ -67,7 +67,13 @@ function getStopReasonFields(context) {
  * - user_cancel, user_interrupt: Likely user-initiated via UI
  * - ctrl_c: Terminal interrupt (Ctrl+C)
  * - manual_stop: Explicit stop button
- * - abort, cancel, interrupt: Generic abort patterns
+ * - abort, cancel: Generic abort patterns
+ *
+ * Plain `interrupt` is intentionally NOT treated as an explicit user abort.
+ * In practice it can also describe a turn interruption caused by a new user
+ * message arriving during long-running tool execution (issue #2478). Those
+ * interrupted turns should still allow Ralph/persistent-mode resume on the
+ * next stop-hook opportunity unless stronger explicit-cancel signals exist.
  *
  * NOTE: Per official Anthropic docs, the Stop hook "Does not run if
  * the stoppage occurred due to a user interrupt." This means this
@@ -85,7 +91,7 @@ export function isUserAbort(context) {
         return true;
     // Check stop_reason patterns indicating user abort
     // Exact-match patterns: short generic words that cause false positives with .includes()
-    const exactPatterns = ['aborted', 'abort', 'cancel', 'interrupt'];
+    const exactPatterns = ['aborted', 'abort', 'cancel'];
     // Substring patterns: compound words safe for .includes() matching
     const substringPatterns = ['user_cancel', 'user_interrupt', 'ctrl_c', 'manual_stop'];
     // Support both snake_case and camelCase field names
@@ -125,7 +131,7 @@ export function isExplicitCancelCommand(context) {
     if (explicitReasonPatterns.some((pattern) => pattern.test(reason) || pattern.test(endTurnReason))) {
         return true;
     }
-    const toolName = String(context.tool_name ?? context.toolName ?? '').toLowerCase();
+    const toolName = String(context.tool_name ?? context.toolName ?? '').toLowerCase().replace(/[\s-]+/g, '_');
     const toolInput = (context.tool_input ?? context.toolInput);
     if (toolName.includes('skill') && toolInput && typeof toolInput.skill === 'string') {
         const skill = toolInput.skill.toLowerCase();
@@ -174,6 +180,30 @@ export function isRateLimitStop(context) {
         'overloaded', 'capacity',
     ];
     return rateLimitPatterns.some(p => reason.includes(p) || endTurnReason.includes(p));
+}
+/**
+ * Scheduled wake-up stops should not trigger persistent-mode re-enforcement.
+ * Claude Code can resume `/loop` work through the native ScheduleWakeup path,
+ * and stale prior-mode state must not inject continuation/cancel prompts into
+ * that scheduled resume turn.
+ */
+export function isScheduledWakeupStop(context) {
+    if (!context)
+        return false;
+    const stopPatterns = [
+        'schedulewakeup',
+        'schedule_wakeup',
+        'scheduled_wakeup',
+        'scheduled_task',
+        'scheduled_resume',
+        'loop_resume',
+        'loop_wakeup',
+    ];
+    const toolName = String(context.tool_name ?? context.toolName ?? '').toLowerCase();
+    if (stopPatterns.some((pattern) => toolName.includes(pattern))) {
+        return true;
+    }
+    return getStopReasonFields(context).some((value) => stopPatterns.some((pattern) => value.includes(pattern)));
 }
 /**
  * Auth-related stop reasons that should bypass continuation re-enforcement.

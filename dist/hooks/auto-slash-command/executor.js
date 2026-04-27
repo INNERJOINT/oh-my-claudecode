@@ -7,14 +7,14 @@
  */
 import { existsSync, readdirSync, readFileSync } from 'fs';
 import { join, basename } from 'path';
-import { getClaudeConfigDir } from '../../utils/paths.js';
+import { getClaudeConfigDir } from '../../utils/config-dir.js';
 import { resolveLiveData } from './live-data.js';
 import { parseFrontmatter, parseFrontmatterAliases, stripOptionalQuotes } from '../../utils/frontmatter.js';
-import { formatOmcCliInvocation, rewriteOmcCliInvocations } from '../../utils/omc-cli-rendering.js';
+import { rewriteOmcCliInvocations } from '../../utils/omc-cli-rendering.js';
 import { parseSkillPipelineMetadata, renderSkillPipelineGuidance } from '../../utils/skill-pipeline.js';
 import { renderSkillResourcesGuidance } from '../../utils/skill-resources.js';
 import { renderSkillRuntimeGuidance } from '../../features/builtin-skills/runtime-guidance.js';
-import { getSkillsDir } from '../../features/builtin-skills/skills.js';
+import { getSkillsDir, renderBundledSkillBody } from '../../features/builtin-skills/skills.js';
 /** Claude config directory */
 const CLAUDE_CONFIG_DIR = getClaudeConfigDir();
 /**
@@ -215,14 +215,14 @@ function renderDeepInterviewAutoresearchGuidance(args) {
     const missionSeed = stripInvocationFlag(args, '--autoresearch');
     const lines = [
         '## Autoresearch Setup Mode',
-        `This deep-interview invocation was launched as the zero-learning-curve setup lane for \`${formatOmcCliInvocation('autoresearch')}\`.`,
+        'This deep-interview invocation was launched as the zero-learning-curve setup lane for the stateful `autoresearch` skill.',
         '',
         'Required behavior in this mode:',
         '- If the mission is not already clear, start by asking: "What should autoresearch improve or prove for this repo?"',
         '- Treat evaluator clarity as a required readiness gate before launch.',
-        '- When the mission and evaluator are ready, launch direct execution with:',
-        `  \`${formatOmcCliInvocation('autoresearch --mission "<mission>" --eval "<evaluator>" [--keep-policy <policy>] [--slug <slug>]')}\``,
-        '- Do **not** hand off to `omc-plan`, `autopilot`, `ralph`, or `team` in this mode.',
+        '- When the mission and evaluator are ready, write setup artifacts and hand off with:',
+        '  `Skill("oh-my-claudecode:autoresearch")`',
+        '- Do **not** hand off to `omc-plan`, `autopilot`, `ralph`, `team`, or the hard-deprecated `omc autoresearch` CLI in this mode.',
     ];
     if (missionSeed) {
         lines.push('', `Mission seed from invocation: \`${missionSeed}\``);
@@ -260,7 +260,10 @@ function formatCommandTemplate(cmd, args) {
     sections.push('---\n');
     // Resolve arguments in content, then execute any live-data commands
     const resolvedContent = resolveArguments(cmd.content || '', displayArgs);
-    const injectedContent = rewriteOmcCliInvocations(resolveLiveData(resolvedContent));
+    const baseContent = resolveLiveData(resolvedContent);
+    const injectedContent = cmd.scope === 'skill'
+        ? renderBundledSkillBody(cmd.metadata.name, baseContent)
+        : rewriteOmcCliInvocations(baseContent);
     const runtimeGuidance = cmd.scope === 'skill' && !isDeepInterviewAutoresearch
         ? renderSkillRuntimeGuidance(cmd.metadata.name)
         : '';
@@ -291,7 +294,7 @@ export function executeSlashCommand(parsed) {
     if (!command) {
         return {
             success: false,
-            error: `Command "/${parsed.command}" not found. Available commands are in $CLAUDE_CONFIG_DIR/commands/ (or ~/.claude/commands/ by default) or .claude/commands/`,
+            error: `Command "/${parsed.command}" not found. Available commands are in ${CLAUDE_CONFIG_DIR}/commands/ or .claude/commands/`,
         };
     }
     try {

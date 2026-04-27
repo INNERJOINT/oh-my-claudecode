@@ -2,23 +2,35 @@ import { mkdir, writeFile, appendFile } from 'fs/promises';
 import { join, dirname } from 'path';
 import { sanitizePromptContent } from '../agents/prompt-helpers.js';
 import { formatOmcCliInvocation } from '../utils/omc-cli-rendering.js';
+const DEFAULT_INSTRUCTION_STATE_ROOT = '.omc/state';
 function buildInstructionPath(...parts) {
     return join(...parts).replaceAll('\\', '/');
 }
-export function generateTriggerMessage(teamName, workerName, teamStateRoot = '.omc/state') {
-    const inboxPath = buildInstructionPath(teamStateRoot, 'team', teamName, 'workers', workerName, 'inbox.md');
-    if (teamStateRoot !== '.omc/state') {
+function buildTeamStateInstructionPath(teamName, instructionStateRoot, ...teamRelativeParts) {
+    const baseParts = instructionStateRoot === DEFAULT_INSTRUCTION_STATE_ROOT
+        ? [instructionStateRoot, 'team', teamName]
+        : [instructionStateRoot];
+    return buildInstructionPath(...baseParts, ...teamRelativeParts);
+}
+export function generateTriggerMessage(teamName, workerName, teamStateRoot = DEFAULT_INSTRUCTION_STATE_ROOT) {
+    const inboxPath = buildTeamStateInstructionPath(teamName, teamStateRoot, 'workers', workerName, 'inbox.md');
+    if (teamStateRoot !== DEFAULT_INSTRUCTION_STATE_ROOT) {
         return `Read ${inboxPath}, work now, report progress.`;
     }
-    return `Read ${inboxPath}, start work now, report concrete progress (not ACK-only), and keep executing your assigned or next feasible work.`;
+    return `Read ${inboxPath}, execute now, report concrete progress.`;
 }
-export function generateMailboxTriggerMessage(teamName, workerName, count = 1, teamStateRoot = '.omc/state') {
+export function generatePromptModeStartupPrompt(teamName, workerName, teamStateRoot = DEFAULT_INSTRUCTION_STATE_ROOT, cliOutputContract) {
+    const inboxPath = buildTeamStateInstructionPath(teamName, teamStateRoot, 'workers', workerName, 'inbox.md');
+    const base = `Open ${inboxPath}. Follow it and begin the assigned work.`;
+    return cliOutputContract ? `${base}\n${cliOutputContract}` : base;
+}
+export function generateMailboxTriggerMessage(teamName, workerName, count = 1, teamStateRoot = DEFAULT_INSTRUCTION_STATE_ROOT) {
     const normalizedCount = Number.isFinite(count) ? Math.max(1, Math.floor(count)) : 1;
-    const mailboxPath = buildInstructionPath(teamStateRoot, 'team', teamName, 'mailbox', `${workerName}.json`);
-    if (teamStateRoot !== '.omc/state') {
+    const mailboxPath = buildTeamStateInstructionPath(teamName, teamStateRoot, 'mailbox', `${workerName}.json`);
+    if (teamStateRoot !== DEFAULT_INSTRUCTION_STATE_ROOT) {
         return `${normalizedCount} new msg(s): check ${mailboxPath}, act and report progress.`;
     }
-    return `You have ${normalizedCount} new message(s). Check ${mailboxPath}, act now, reply with concrete progress (not ACK-only), and keep executing your assigned or next feasible work.`;
+    return `${normalizedCount} new msg(s). Read ${mailboxPath}, act now, report concrete progress.`;
 }
 function agentTypeGuidance(agentType) {
     const teamApiCommand = formatOmcCliInvocation('team api');
@@ -39,6 +51,13 @@ function agentTypeGuidance(agentType) {
                 '- Keep commit-sized changes scoped to assigned files only; no broad refactors.',
                 `- CRITICAL: You MUST run \`${claimTaskCommand}\` before starting work and \`${transitionTaskStatusCommand}\` when done. Do not exit without transitioning the task status.`,
             ].join('\n');
+        case 'cursor':
+            return [
+                '### Agent-Type Guidance (cursor)',
+                '- You are an interactive REPL (cursor-agent), not a one-shot CLI. Stay in the session; the leader will continue to send prompts via mailbox.',
+                `- You MUST run \`${claimTaskCommand}\` before starting work and \`${transitionTaskStatusCommand}\` when done. Then keep waiting for the next mailbox message; do NOT type \`/exit\` unless the leader sends an explicit shutdown.`,
+                '- Reviewer/critic/security-review roles are NOT supported for cursor workers — those require a verdict-file write-and-exit which the REPL does not perform. Take only executor-style tasks.',
+            ].join('\n');
         case 'claude':
         default:
             return [
@@ -56,16 +75,18 @@ function agentTypeGuidance(agentType) {
  */
 export function generateWorkerOverlay(params) {
     const { teamName, workerName, agentType, tasks, bootstrapInstructions } = params;
+    const instructionStateRoot = params.instructionStateRoot ?? DEFAULT_INSTRUCTION_STATE_ROOT;
     // Sanitize all task content before embedding
     const sanitizedTasks = tasks.map(t => ({
         id: t.id,
         subject: sanitizePromptContent(t.subject),
         description: sanitizePromptContent(t.description),
     }));
-    const sentinelPath = `.omc/state/team/${teamName}/workers/${workerName}/.ready`;
-    const heartbeatPath = `.omc/state/team/${teamName}/workers/${workerName}/heartbeat.json`;
-    const inboxPath = `.omc/state/team/${teamName}/workers/${workerName}/inbox.md`;
-    const statusPath = `.omc/state/team/${teamName}/workers/${workerName}/status.json`;
+    const sentinelPath = buildTeamStateInstructionPath(teamName, instructionStateRoot, 'workers', workerName, '.ready');
+    const heartbeatPath = buildTeamStateInstructionPath(teamName, instructionStateRoot, 'workers', workerName, 'heartbeat.json');
+    const inboxPath = buildTeamStateInstructionPath(teamName, instructionStateRoot, 'workers', workerName, 'inbox.md');
+    const statusPath = buildTeamStateInstructionPath(teamName, instructionStateRoot, 'workers', workerName, 'status.json');
+    const shutdownAckPath = buildTeamStateInstructionPath(teamName, instructionStateRoot, 'workers', workerName, 'shutdown-ack.json');
     const claimTaskCommand = formatOmcCliInvocation(`team api claim-task --input "{\\"team_name\\":\\"${teamName}\\",\\"task_id\\":\\"<id>\\",\\"worker\\":\\"${workerName}\\"}" --json`);
     const sendAckCommand = formatOmcCliInvocation(`team api send-message --input "{\\"team_name\\":\\"${teamName}\\",\\"from_worker\\":\\"${workerName}\\",\\"to_worker\\":\\"leader-fixed\\",\\"body\\":\\"ACK: ${workerName} initialized\\"}" --json`);
     const completeTaskCommand = formatOmcCliInvocation(`team api transition-task-status --input "{\\"team_name\\":\\"${teamName}\\",\\"task_id\\":\\"<id>\\",\\"from\\":\\"in_progress\\",\\"to\\":\\"completed\\",\\"claim_token\\":\\"<claim_token>\\"}" --json`);
@@ -122,6 +143,11 @@ Use the CLI API for all task lifecycle operations. Do NOT directly edit task fil
 - Fail task: \`${failTaskCommand}\`
 - Release claim (rollback): \`${releaseClaimCommand}\`
 
+## Canonical Team State Root
+- Resolve the team state root in this order: \`OMC_TEAM_STATE_ROOT\` env -> worker identity \`team_state_root\` -> config/manifest \`team_state_root\` -> ${params.cwd}/.omc/state/team/${teamName}.
+- \`OMC_TEAM_STATE_ROOT\` is the team-specific root (\`.../.omc/state/team/${teamName}\`). When it is set, append worker/mailbox paths directly below it; do not append another \`team/${teamName}\` segment.
+- Worktree-backed workers MUST use the canonical leader-owned state root for inbox, mailbox, task lifecycle, status, heartbeat, and shutdown files; do not use a local worktree \`.omc/state\` when \`OMC_TEAM_STATE_ROOT\` is set.
+
 ## Communication Protocol
 - **Inbox**: Read ${inboxPath} for new instructions
 - **Status**: Write to ${statusPath}:
@@ -146,7 +172,7 @@ Before doing any task work, send exactly one startup ACK to the leader:
 
 ## Shutdown Protocol
 When you see a shutdown request in your inbox:
-1. Write your decision to: .omc/state/team/${teamName}/workers/${workerName}/shutdown-ack.json
+1. Write your decision to: ${shutdownAckPath}
 2. Format:
    - Accept: {"status":"accept","reason":"ok","updated_at":"<iso>"}
    - Reject: {"status":"reject","reason":"still working","updated_at":"<iso>"}
@@ -173,10 +199,13 @@ ${bootstrapInstructions ? `## Role Context\n${bootstrapInstructions}\n` : ''}`;
 /**
  * Write the initial inbox file for a worker.
  */
-export async function composeInitialInbox(teamName, workerName, content, cwd) {
+export async function composeInitialInbox(teamName, workerName, content, cwd, cliOutputContract) {
     const inboxPath = join(cwd, `.omc/state/team/${teamName}/workers/${workerName}/inbox.md`);
     await mkdir(dirname(inboxPath), { recursive: true });
-    await writeFile(inboxPath, content, 'utf-8');
+    const finalContent = cliOutputContract && !content.includes(cliOutputContract)
+        ? `${content}\n${cliOutputContract}`
+        : content;
+    await writeFile(inboxPath, finalContent, 'utf-8');
 }
 /**
  * Append a message to the worker inbox.

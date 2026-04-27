@@ -18,6 +18,7 @@ import { aospTools } from "../tools/aosp-tools.js";
 import { sharedMemoryTools } from "../tools/shared-memory-tools.js";
 import { getInteropTools } from "../interop/mcp-bridge.js";
 import { deepinitManifestTool } from "../tools/deepinit-manifest.js";
+import { wikiTools } from "../tools/wiki-tools.js";
 import { TOOL_CATEGORIES, type ToolCategory } from "../constants/index.js";
 
 // Type for our tool definitions
@@ -55,6 +56,7 @@ export const DISABLE_TOOLS_GROUP_MAP: Record<string, ToolCategory> = {
   'shared-memory': TOOL_CATEGORIES.SHARED_MEMORY,
   'deepinit': TOOL_CATEGORIES.DEEPINIT,
   'deepinit-manifest': TOOL_CATEGORIES.DEEPINIT,
+  'wiki': TOOL_CATEGORIES.WIKI,
 };
 
 /**
@@ -104,6 +106,7 @@ const allTools: ToolDef[] = [
   ...tagCategory(aospTools as unknown as ToolDef[], TOOL_CATEGORIES.AOSP),
   ...tagCategory(sharedMemoryTools as unknown as ToolDef[], TOOL_CATEGORIES.SHARED_MEMORY),
   { ...(deepinitManifestTool as unknown as ToolDef), category: TOOL_CATEGORIES.DEEPINIT },
+  ...tagCategory(wikiTools as unknown as ToolDef[], TOOL_CATEGORIES.WIKI),
   ...interopTools,
 ];
 
@@ -164,6 +167,7 @@ export function getOmcToolNames(options?: {
   includeInterop?: boolean;
   includeSharedMemory?: boolean;
   includeDeepinit?: boolean;
+  includeWiki?: boolean;
 }): string[] {
   const {
     includeLsp = true,
@@ -177,6 +181,7 @@ export function getOmcToolNames(options?: {
     includeInterop = true,
     includeSharedMemory = true,
     includeDeepinit = true,
+    includeWiki = true,
   } = options || {};
 
   const excludedCategories = new Set<ToolCategory>();
@@ -191,6 +196,7 @@ export function getOmcToolNames(options?: {
   if (!includeInterop) excludedCategories.add(TOOL_CATEGORIES.INTEROP);
   if (!includeSharedMemory) excludedCategories.add(TOOL_CATEGORIES.SHARED_MEMORY);
   if (!includeDeepinit) excludedCategories.add(TOOL_CATEGORIES.DEEPINIT);
+  if (!includeWiki) excludedCategories.add(TOOL_CATEGORIES.WIKI);
 
   if (excludedCategories.size === 0) return [...omcToolNames];
 
@@ -215,6 +221,7 @@ export function _getAllToolNamesForTests(options?: {
   includeInterop?: boolean;
   includeSharedMemory?: boolean;
   includeDeepinit?: boolean;
+  includeWiki?: boolean;
 }): string[] {
   const {
     includeLsp = true,
@@ -228,6 +235,7 @@ export function _getAllToolNamesForTests(options?: {
     includeInterop = true,
     includeSharedMemory = true,
     includeDeepinit = true,
+    includeWiki = true,
   } = options || {};
 
   const excludedCategories = new Set<ToolCategory>();
@@ -242,6 +250,7 @@ export function _getAllToolNamesForTests(options?: {
   if (!includeInterop) excludedCategories.add(TOOL_CATEGORIES.INTEROP);
   if (!includeSharedMemory) excludedCategories.add(TOOL_CATEGORIES.SHARED_MEMORY);
   if (!includeDeepinit) excludedCategories.add(TOOL_CATEGORIES.DEEPINIT);
+  if (!includeWiki) excludedCategories.add(TOOL_CATEGORIES.WIKI);
 
   return allTools
     .filter(t => !t.category || !excludedCategories.has(t.category))

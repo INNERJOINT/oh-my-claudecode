@@ -8,8 +8,10 @@
  */
 import { z } from "zod";
 import { readFileSync, readdirSync, statSync, writeFileSync } from "fs";
-import { join, extname, resolve } from "path";
+import { join, extname, resolve, normalize, relative, isAbsolute } from "path";
 import { createRequire } from "module";
+import { getWorktreeRoot } from "../lib/worktree-paths.js";
+import { isToolPathRestricted } from "../lib/security-config.js";
 // Dynamic import for @ast-grep/napi
 // Graceful degradation: if the module is not available (e.g., in bundled/plugin context),
 // tools will return a helpful error message instead of crashing
@@ -44,6 +46,29 @@ async function getSgModule() {
         }
     }
     return sgModule;
+}
+/**
+ * Validate that a tool path is within the project root boundary.
+ * Only enforced when OMC_RESTRICT_TOOL_PATHS=true.
+ *
+ * @param inputPath - The path parameter from tool invocation
+ * @returns The resolved absolute path
+ * @throws Error if path is outside project root when restriction is enabled
+ */
+export function validateToolPath(inputPath) {
+    const resolved = resolve(inputPath);
+    if (!isToolPathRestricted()) {
+        return resolved;
+    }
+    const projectRoot = getWorktreeRoot() || process.cwd();
+    const normalizedRoot = normalize(projectRoot);
+    const normalizedPath = normalize(resolved);
+    const rel = relative(normalizedRoot, normalizedPath);
+    if (rel.startsWith("..") || isAbsolute(rel)) {
+        throw new Error(`Path restricted: '${inputPath}' is outside the project root '${projectRoot}'. ` +
+            `Disable via security.restrictToolPaths in .claude/omc.jsonc or unset OMC_SECURITY.`);
+    }
+    return resolved;
 }
 /**
  * Convert lowercase language string to ast-grep Lang enum value
@@ -251,6 +276,7 @@ Note: Patterns must be valid AST nodes for the language.`,
     handler: async (args) => {
         const { pattern, language, path = ".", context = 2, maxResults = 20, } = args;
         try {
+            const validatedPath = validateToolPath(path);
             const sg = await getSgModule();
             if (!sg) {
                 return {
@@ -262,7 +288,7 @@ Note: Patterns must be valid AST nodes for the language.`,
                     ],
                 };
             }
-            const files = getFilesForLanguage(path, language);
+            const files = getFilesForLanguage(validatedPath, language);
             if (files.length === 0) {
                 return {
                     content: [
@@ -363,6 +389,7 @@ IMPORTANT: dryRun=true (default) only previews changes. Set dryRun=false to appl
     handler: async (args) => {
         const { pattern, replacement, language, path = ".", dryRun = true } = args;
         try {
+            const validatedPath = validateToolPath(path);
             const sg = await getSgModule();
             if (!sg) {
                 return {
@@ -374,7 +401,7 @@ IMPORTANT: dryRun=true (default) only previews changes. Set dryRun=false to appl
                     ],
                 };
             }
-            const files = getFilesForLanguage(path, language);
+            const files = getFilesForLanguage(validatedPath, language);
             if (files.length === 0) {
                 return {
                     content: [

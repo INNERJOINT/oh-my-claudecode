@@ -30,10 +30,8 @@ vi.mock('fs', async () => {
 
 import { execSync, execFileSync } from 'child_process';
 import { cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
-import { homedir } from 'os';
 import { join } from 'path';
-import { install, isProjectScopedPlugin, checkNodeVersion } from '../installer/index.js';
-import * as hooksModule from '../installer/hooks.js';
+import { install, isProjectScopedPlugin, checkNodeVersion, CLAUDE_CONFIG_DIR } from '../installer/index.js';
 import {
   reconcileUpdateRuntime,
   performUpdate,
@@ -96,12 +94,13 @@ describe('auto-update reconciliation', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
     delete process.env.OMC_UPDATE_RECONCILE;
+    delete process.env.CLAUDE_PLUGIN_ROOT;
     if (originalPlatformDescriptor) {
       Object.defineProperty(process, 'platform', originalPlatformDescriptor);
     }
   });
 
-  it('reconciles runtime state and refreshes hooks after update', () => {
+  it('reconciles runtime state without re-injecting settings hooks', () => {
     mockedExistsSync.mockReturnValue(false);
 
     const result = reconcileUpdateRuntime({ verbose: false });
@@ -112,8 +111,8 @@ describe('auto-update reconciliation', () => {
       force: true,
       verbose: false,
       skipClaudeCheck: true,
-      forceHooks: true,
-      refreshHooksInPlugin: true,
+      forceHooks: false,
+      refreshHooksInPlugin: false,
     });
   });
 
@@ -128,7 +127,7 @@ describe('auto-update reconciliation', () => {
       force: true,
       verbose: false,
       skipClaudeCheck: true,
-      forceHooks: true,
+      forceHooks: false,
       refreshHooksInPlugin: false,
     });
   });
@@ -143,21 +142,21 @@ describe('auto-update reconciliation', () => {
       force: true,
       verbose: false,
       skipClaudeCheck: true,
-      forceHooks: true,
-      refreshHooksInPlugin: true,
+      forceHooks: false,
+      refreshHooksInPlugin: false,
     });
     expect(mockedInstall).toHaveBeenNthCalledWith(2, {
       force: true,
       verbose: false,
       skipClaudeCheck: true,
-      forceHooks: true,
-      refreshHooksInPlugin: true,
+      forceHooks: false,
+      refreshHooksInPlugin: false,
     });
   });
 
   it('syncs active plugin cache roots and logs when copy occurs', () => {
     const consoleLogSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
-    const activeRoot = '/tmp/.claude/plugins/cache/omc/oh-my-claudecode/4.1.5';
+    const activeRoot = join(CLAUDE_CONFIG_DIR, 'plugins', 'cache', 'omc', 'oh-my-claudecode', '4.1.5');
 
     mockedReadFileSync.mockImplementation((path: Parameters<typeof readFileSync>[0]) => {
       const normalized = String(path).replace(/\\/g, '/');
@@ -234,7 +233,7 @@ describe('auto-update reconciliation', () => {
 
   it('syncs the plugin cache directory when cache root exists', () => {
     const consoleLogSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
-    const cacheRoot = join(homedir(), '.claude', 'plugins', 'cache', 'omc', 'oh-my-claudecode');
+    const cacheRoot = join(CLAUDE_CONFIG_DIR, 'plugins', 'cache', 'omc', 'oh-my-claudecode');
     const versionedCacheRoot = `${cacheRoot}/4.9.0`;
 
     mockedExecSync.mockImplementation((command: string) => {
@@ -293,7 +292,7 @@ describe('auto-update reconciliation', () => {
   });
 
   it('skips plugin cache sync gracefully when cache dir does not exist', () => {
-    const cacheRoot = join(homedir(), '.claude', 'plugins', 'cache', 'omc', 'oh-my-claudecode');
+    const cacheRoot = join(CLAUDE_CONFIG_DIR, 'plugins', 'cache', 'omc', 'oh-my-claudecode');
     mockedExistsSync.mockImplementation((path: Parameters<typeof existsSync>[0]) => {
       const normalized = String(path).replace(/\\/g, '/');
       if (normalized === cacheRoot) {
@@ -311,7 +310,7 @@ describe('auto-update reconciliation', () => {
 
   it('handles plugin cache sync errors non-fatally', () => {
     const consoleWarnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    const cacheRoot = join(homedir(), '.claude', 'plugins', 'cache', 'omc', 'oh-my-claudecode');
+    const cacheRoot = join(CLAUDE_CONFIG_DIR, 'plugins', 'cache', 'omc', 'oh-my-claudecode');
     const versionedCacheRoot = `${cacheRoot}/4.9.0`;
 
     mockedExecSync.mockImplementation((command: string) => {
@@ -383,8 +382,8 @@ describe('auto-update reconciliation', () => {
 
   it('dedupes plugin roots and ignores missing targets during sync', () => {
     const consoleLogSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
-    const activeRoot = '/tmp/.claude/plugins/cache/omc/oh-my-claudecode/4.1.5';
-    const staleRoot = '/tmp/.claude/plugins/cache/omc/oh-my-claudecode/4.1.4';
+    const activeRoot = join(CLAUDE_CONFIG_DIR, 'plugins', 'cache', 'omc', 'oh-my-claudecode', '4.1.5');
+    const staleRoot = join(CLAUDE_CONFIG_DIR, 'plugins', 'cache', 'omc', 'oh-my-claudecode', '4.1.4');
     process.env.CLAUDE_PLUGIN_ROOT = activeRoot;
 
     mockedReadFileSync.mockImplementation((path: Parameters<typeof readFileSync>[0]) => {
@@ -434,8 +433,8 @@ describe('auto-update reconciliation', () => {
   });
 
   it('allows standalone update when CLAUDE_PLUGIN_ROOT is inherited without an active Claude session', async () => {
-    const pluginRoot = join(homedir(), '.claude', 'plugins', 'cache', 'omc', 'oh-my-claudecode', '4.1.5');
-    const cacheRoot = join(homedir(), '.claude', 'plugins', 'cache', 'omc', 'oh-my-claudecode');
+    const pluginRoot = join(CLAUDE_CONFIG_DIR, 'plugins', 'cache', 'omc', 'oh-my-claudecode', '4.1.5');
+    const cacheRoot = join(CLAUDE_CONFIG_DIR, 'plugins', 'cache', 'omc', 'oh-my-claudecode');
     process.env.OMC_UPDATE_RECONCILE = '1';
     process.env.CLAUDE_PLUGIN_ROOT = pluginRoot;
     delete process.env.CLAUDE_CODE_ENTRYPOINT;
@@ -485,10 +484,18 @@ describe('auto-update reconciliation', () => {
     expect(mockedExecSync).toHaveBeenCalledWith('npm install -g @innerjoint/oh-my-claudecode@latest', expect.any(Object));
   });
 
-  it('runs reconciliation as part of performUpdate', async () => {
+  it('runs reconciliation as part of performUpdate without plugin hook reinjection', async () => {
     // Set env var so performUpdate takes the direct reconciliation path
     // (simulates being in the re-exec'd process after npm install)
     process.env.OMC_UPDATE_RECONCILE = '1';
+    process.env.CLAUDE_PLUGIN_ROOT = join(
+      CLAUDE_CONFIG_DIR,
+      'plugins',
+      'cache',
+      'omc',
+      'oh-my-claudecode',
+      '4.1.5',
+    );
 
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
       ok: true,
@@ -513,8 +520,8 @@ describe('auto-update reconciliation', () => {
       force: true,
       verbose: false,
       skipClaudeCheck: true,
-      forceHooks: true,
-      refreshHooksInPlugin: true,
+      forceHooks: false,
+      refreshHooksInPlugin: false,
     });
 
     delete process.env.OMC_UPDATE_RECONCILE;
@@ -846,88 +853,26 @@ describe('auto-update reconciliation', () => {
     expect(mockedWriteFileSync).not.toHaveBeenCalled();
   });
 
-  it('preserves non-OMC hooks when refreshing plugin hooks during reconciliation', () => {
-    const existingSettings = {
-      hooks: {
-        UserPromptSubmit: [
-          {
-            hooks: [
-              {
-                type: 'command',
-                command: 'node $HOME/.claude/hooks/other-plugin.mjs',
-              },
-            ],
-          },
-        ],
-      },
-    };
-
-    const settingsPath = join(homedir(), '.claude', 'settings.json');
-    const baseHooks = hooksModule.getHooksSettingsConfig();
-    const freshHooks = {
-      ...baseHooks,
-      hooks: {
-        ...baseHooks.hooks,
-        UserPromptSubmit: [
-          {
-            hooks: [
-              {
-                type: 'command' as const,
-                command: 'node $HOME/.claude/hooks/keyword-detector.mjs',
-              },
-            ],
-          },
-        ],
-      },
-    };
-
-    mockedExistsSync.mockImplementation((path) => {
-      const normalized = String(path).replace(/\\/g, '/');
-      if (normalized === settingsPath) {
-        return true;
-      }
-      if (normalized.endsWith('/.claude/hud')) {
-        return false;
-      }
-      if (normalized.includes('/hooks/')) {
-        return false;
-      }
-      return true;
-    });
-    mockedIsProjectScopedPlugin.mockReturnValue(false);
-
-    mockedReadFileSync.mockImplementation((path: Parameters<typeof readFileSync>[0]) => {
-      if (String(path) === settingsPath) {
-        return JSON.stringify(existingSettings);
-      }
-      if (String(path).includes('/hooks/')) {
-        return 'hook-script';
-      }
-      return '';
-    });
-
-    vi.spyOn(hooksModule, 'getHooksSettingsConfig').mockReturnValue(freshHooks);
+  it('uses standalone reconciliation flags outside plugin runtime', () => {
+    mockedExistsSync.mockReturnValue(false);
 
     const originalPluginRoot = process.env.CLAUDE_PLUGIN_ROOT;
-    process.env.CLAUDE_PLUGIN_ROOT = join(homedir(), '.claude', 'plugins', 'cache', 'omc', 'oh-my-claudecode', '4.1.5');
+    delete process.env.CLAUDE_PLUGIN_ROOT;
 
-    const result = install({
-      force: true,
-      skipClaudeCheck: true,
-      refreshHooksInPlugin: true,
-    });
+    const result = reconcileUpdateRuntime({ verbose: false });
 
     if (originalPluginRoot !== undefined) {
       process.env.CLAUDE_PLUGIN_ROOT = originalPluginRoot;
-    } else {
-      delete process.env.CLAUDE_PLUGIN_ROOT;
     }
 
-    const settingsWrite = mockedWriteFileSync.mock.calls.find((call) => String(call[0]).includes('settings.json'));
-    if (settingsWrite) {
-      const writtenSettings = JSON.parse(String(settingsWrite[1]));
-      expect(writtenSettings.hooks.UserPromptSubmit[0].hooks[0].command).toBe('node $HOME/.claude/hooks/other-plugin.mjs');
-    }
-    expect(result.hooksConfigured).toBe(true);
+    expect(result.success).toBe(true);
+    expect(mockedInstall).toHaveBeenCalledWith({
+      force: true,
+      verbose: false,
+      skipClaudeCheck: true,
+      forceHooks: false,
+      refreshHooksInPlugin: false,
+    });
   });
+
 });

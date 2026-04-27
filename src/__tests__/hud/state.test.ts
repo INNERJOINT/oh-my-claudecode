@@ -18,6 +18,10 @@ vi.mock("node:os", () => ({
   homedir: () => "/Users/testuser",
 }));
 
+vi.mock("../../utils/config-dir.js", () => ({
+  getClaudeConfigDir: () => "/Users/testuser/.claude",
+}));
+
 import { existsSync, readFileSync } from "node:fs";
 import { atomicWriteFileSync } from "../../lib/atomic-write.js";
 const mockExistsSync = vi.mocked(existsSync);
@@ -60,6 +64,28 @@ describe("readHudConfig", () => {
 
       expect(config.elements.gitRepo).toBe(true);
       expect(config.elements.gitBranch).toBe(true);
+    });
+
+    it("reads callCountsFormat from settings.json", () => {
+      mockExistsSync.mockImplementation((path) => {
+        const s = String(path);
+        return /[\/]Users[\/]testuser[\/]\.claude[\/]settings\.json$/.test(
+          s,
+        );
+      });
+      mockReadFileSync.mockReturnValue(
+        JSON.stringify({
+          omcHud: {
+            elements: {
+              callCountsFormat: "emoji",
+            },
+          },
+        }),
+      );
+
+      const config = readHudConfig();
+
+      expect(config.elements.callCountsFormat).toBe("emoji");
     });
 
     it("falls back to legacy hud-config.json when settings.json has no omcHud", () => {
@@ -360,5 +386,116 @@ describe("writeHudConfig", () => {
     expect(written.omcHud.elements.cwd).toBe(true);
     expect(written.omcHud.elements.gitBranch).toBe(true);
     expect(written.omcHud.wrapMode).toBe("truncate");
+  });
+});
+
+describe("layout config round-trip", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("readHudConfig preserves elementOrder from settings.json", () => {
+    mockExistsSync.mockImplementation((path) =>
+      String(path).endsWith("settings.json"),
+    );
+    mockReadFileSync.mockReturnValue(
+      JSON.stringify({
+        omcHud: {
+          elementOrder: ["contextBar", "omcLabel", "session"],
+        },
+      }),
+    );
+
+    const config = readHudConfig();
+
+    expect(config.elementOrder).toEqual([
+      "contextBar",
+      "omcLabel",
+      "session",
+    ]);
+  });
+
+  it("readHudConfig preserves layout from settings.json", () => {
+    mockExistsSync.mockImplementation((path) =>
+      String(path).endsWith("settings.json"),
+    );
+    mockReadFileSync.mockReturnValue(
+      JSON.stringify({
+        omcHud: {
+          layout: {
+            line1: ["gitBranch", "model"],
+            main: ["omcLabel", "contextBar"],
+            detail: ["todos"],
+          },
+        },
+      }),
+    );
+
+    const config = readHudConfig();
+
+    expect(config.layout).toEqual({
+      line1: ["gitBranch", "model"],
+      main: ["omcLabel", "contextBar"],
+      detail: ["todos"],
+    });
+  });
+
+  it("readHudConfig returns no layout when not configured", () => {
+    mockExistsSync.mockImplementation((path) =>
+      String(path).endsWith("settings.json"),
+    );
+    mockReadFileSync.mockReturnValue(
+      JSON.stringify({
+        omcHud: {
+          elements: { gitRepo: true },
+        },
+      }),
+    );
+
+    const config = readHudConfig();
+
+    expect(config.layout).toBeUndefined();
+  });
+
+  it("writeHudConfig persists layout to settings.json", () => {
+    mockExistsSync.mockImplementation((path) =>
+      String(path).endsWith("settings.json"),
+    );
+    mockReadFileSync.mockReturnValue(JSON.stringify({}));
+
+    const ok = writeHudConfig({
+      ...DEFAULT_HUD_CONFIG,
+      layout: {
+        main: ["contextBar", "omcLabel", "ralph"],
+      },
+    });
+
+    expect(ok).toBe(true);
+    const [, raw] = mockAtomicWriteFileSync.mock.calls[0] as [string, string];
+    const written = JSON.parse(raw);
+    expect(written.omcHud.layout).toEqual({
+      main: ["contextBar", "omcLabel", "ralph"],
+    });
+  });
+
+  it("writeHudConfig persists elementOrder to settings.json", () => {
+    mockExistsSync.mockImplementation((path) =>
+      String(path).endsWith("settings.json"),
+    );
+    mockReadFileSync.mockReturnValue(JSON.stringify({}));
+
+    const ok = writeHudConfig({
+      ...DEFAULT_HUD_CONFIG,
+      elementOrder: ["contextBar", "omcLabel", "session"],
+    });
+
+    expect(ok).toBe(true);
+    const [, raw] = mockAtomicWriteFileSync.mock.calls[0] as [string, string];
+    const written = JSON.parse(raw);
+    expect(written.omcHud.elementOrder).toEqual([
+      "contextBar",
+      "omcLabel",
+      "session",
+    ]);
   });
 });

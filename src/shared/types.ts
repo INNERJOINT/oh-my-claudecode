@@ -56,6 +56,12 @@ export interface PluginConfig {
     context7?: { enabled?: boolean };
   };
 
+  // Prompt-level company context MCP contract
+  companyContext?: {
+    tool?: string;
+    onError?: "warn" | "silent" | "fail";
+  };
+
   // Permission settings
   permissions?: {
     allowBash?: boolean;
@@ -130,6 +136,9 @@ export interface PluginConfig {
   // Delegation routing configuration
   delegationRouting?: DelegationRoutingConfig;
 
+  // /team role routing configuration (scoped to /team only; distinct from delegationRouting)
+  team?: TeamConfigBlock;
+
   // Plan output configuration (issue #1636)
   planOutput?: {
     /** Relative directory for generated plan artifacts. Default: .omc/plans */
@@ -173,6 +182,12 @@ export interface PluginConfig {
     };
   };
 
+  // Teleport worktree bootstrap configuration
+  teleport?: {
+    /** Reuse parent repo node_modules via symlink when package.json matches. Default: true */
+    symlinkNodeModules?: boolean;
+  };
+
   // Task size detection configuration (issue #790)
   taskSizeDetection?: {
     /** Enable task-size detection to prevent over-orchestration for small tasks. Default: true */
@@ -183,6 +198,23 @@ export interface PluginConfig {
     largeWordLimit?: number;
     /** Suppress heavy orchestration modes (ralph/autopilot/team/ultrawork) for small tasks. Default: true */
     suppressHeavyModesForSmallTasks?: boolean;
+  };
+
+  // Prompt prerequisite gating for execution modes (issue #1859)
+  promptPrerequisites?: {
+    /** Enable parsing + blocking gate injection for prerequisite sections. Default: true */
+    enabled?: boolean;
+    /** Extensible heading aliases grouped by semantic section kind. */
+    sectionNames?: {
+      memory?: string[];
+      skills?: string[];
+      verifyFirst?: string[];
+      context?: string[];
+    };
+    /** Tool names denied until prerequisites are satisfied. */
+    blockingTools?: string[];
+    /** Execution keywords that activate the gate. */
+    executionKeywords?: string[];
   };
 }
 
@@ -211,7 +243,7 @@ export interface BackgroundTask {
 
 export interface MagicKeyword {
   triggers: string[];
-  action: (prompt: string, agentName?: string) => string;
+  action: (prompt: string, agentName?: string, modelId?: string) => string;
   description: string;
 }
 
@@ -354,4 +386,102 @@ export interface ResolveDelegationOptions {
   explicitTool?: DelegationTool;
   explicitModel?: string;
   config?: DelegationRoutingConfig;
+}
+
+// ---------------------------------------------------------------------------
+// /team role routing (Option E — /team-scoped per-role provider & model)
+// ---------------------------------------------------------------------------
+
+/** Canonical role names accepted in `team.roleRouting` (source of truth). */
+export const CANONICAL_TEAM_ROLES = [
+  'orchestrator',
+  'planner',
+  'analyst',
+  'architect',
+  'executor',
+  'debugger',
+  'critic',
+  'code-reviewer',
+  'security-reviewer',
+  'test-engineer',
+  'designer',
+  'writer',
+  'code-simplifier',
+  'explore',
+  'document-specialist',
+] as const;
+
+export type CanonicalTeamRole = typeof CANONICAL_TEAM_ROLES[number];
+
+/** Provider for /team role routing. */
+export type TeamRoleProvider = 'claude' | 'codex' | 'gemini';
+
+/** Tier name accepted in role-assignment `model` field. */
+export type TeamRoleTier = 'HIGH' | 'MEDIUM' | 'LOW';
+
+/** Known agent names derived from `buildDefaultConfig().agents` keys in src/config/loader.ts. */
+export const KNOWN_AGENT_NAMES = [
+  'omc',
+  'explore',
+  'analyst',
+  'planner',
+  'architect',
+  'debugger',
+  'executor',
+  'verifier',
+  'securityReviewer',
+  'codeReviewer',
+  'testEngineer',
+  'designer',
+  'writer',
+  'qaTester',
+  'scientist',
+  'tracer',
+  'gitMaster',
+  'codeSimplifier',
+  'critic',
+  'documentSpecialist',
+] as const;
+
+export type KnownAgentName = typeof KNOWN_AGENT_NAMES[number];
+
+/** User-facing per-role spec in `team.roleRouting`. */
+export interface TeamRoleAssignmentSpec {
+  provider?: TeamRoleProvider;
+  /** Tier name ('HIGH' | 'MEDIUM' | 'LOW') or explicit model ID. */
+  model?: TeamRoleTier | string;
+  agent?: KnownAgentName;
+}
+
+/** Orchestrator is pinned to claude; only `model` is user-configurable. */
+export type OrchestratorSpec = Pick<TeamRoleAssignmentSpec, 'model'>;
+
+/** Cost mode reserved for future downgrade behavior (no implementation yet). */
+export type TeamCostMode = 'normal' | 'downgrade';
+
+/** Ops-level knobs for `/team`. */
+export interface TeamOpsConfig {
+  maxAgents?: number;
+  defaultAgentType?: TeamRoleProvider;
+  monitorIntervalMs?: number;
+  shutdownTimeoutMs?: number;
+  costMode?: TeamCostMode;
+  /** Opt-in native team worker worktrees. Disabled unless explicitly set. */
+  worktreeMode?: 'disabled' | 'off' | 'detached' | 'branch' | 'named';
+}
+
+/** `team` config block in PluginConfig. */
+export interface TeamConfigBlock {
+  ops?: TeamOpsConfig;
+  roleRouting?: Partial<Record<CanonicalTeamRole, TeamRoleAssignmentSpec>> & {
+    orchestrator?: OrchestratorSpec;
+  };
+}
+
+/** Concrete resolved per-role assignment stored in `TeamConfig.resolved_routing`. */
+export interface RoleAssignment {
+  provider: TeamRoleProvider;
+  /** Resolved model ID (tier names expanded to explicit model strings). */
+  model: string;
+  agent: KnownAgentName;
 }

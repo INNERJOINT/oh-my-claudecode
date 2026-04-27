@@ -10,9 +10,10 @@
  * Enhancement in v3.5: Now uses RECURSIVE discovery (skills in subdirectories included)
  */
 
-import { existsSync, readdirSync, readFileSync, realpathSync } from 'fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, writeFileSync } from 'fs';
 import { join, basename } from 'path';
 import { homedir } from 'os';
+import { getClaudeConfigDir } from './lib/config-dir.mjs';
 import { readStdin } from './lib/stdin.mjs';
 import { createRequire } from 'module';
 
@@ -26,19 +27,43 @@ try {
 }
 
 // Constants (used by fallback)
-const cfgDir = process.env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude');
+const cfgDir = getClaudeConfigDir();
 const USER_SKILLS_DIR = join(cfgDir, 'skills', 'omc-learned');
 const GLOBAL_SKILLS_DIR = join(homedir(), '.omc', 'skills');
 const PROJECT_SKILLS_SUBDIR = join('.omc', 'skills');
 const SKILL_EXTENSION = '.md';
 const MAX_SKILLS_PER_SESSION = 5;
+const MAX_LEARNED_SKILL_DESCRIPTOR_CHARS = 1000;
+const MAX_LEARNED_SKILLS_CONTEXT_CHARS = 3000;
 
 // =============================================================================
 // Fallback Implementation (used when bridge bundle not available)
 // =============================================================================
 
-// In-memory cache (resets each process - known limitation, fixed by bridge)
-const injectedCacheFallback = new Map();
+// File-based session dedup for fallback path (issue #2577 bug 1).
+// UserPromptSubmit spawns a NEW Node.js process on every prompt turn, so an
+// in-memory Map always starts empty — skills were re-injected on every turn.
+// Persisting to a JSON state file at {cwd}/.omc/state/skill-sessions-fallback.json
+// preserves the injected-set across process spawns, matching bridge behaviour.
+const FALLBACK_SESSION_TTL_MS = 60 * 60 * 1000; // 1 hour (same as bridge)
+
+function readFallbackState(directory) {
+  const stateFile = join(directory, '.omc', 'state', 'skill-sessions-fallback.json');
+  try {
+    if (existsSync(stateFile)) {
+      return JSON.parse(readFileSync(stateFile, 'utf-8'));
+    }
+  } catch { /* ignore read/parse errors */ }
+  return { sessions: {} };
+}
+
+function writeFallbackState(directory, state) {
+  const stateDir = join(directory, '.omc', 'state');
+  try {
+    mkdirSync(stateDir, { recursive: true });
+    writeFileSync(join(stateDir, 'skill-sessions-fallback.json'), JSON.stringify(state, null, 2));
+  } catch { /* non-critical — dedup fails open */ }
+}
 
 // Parse YAML frontmatter from skill file (fallback)
 function parseSkillFrontmatterFallback(content) {
@@ -59,11 +84,13 @@ function parseSkillFrontmatterFallback(content) {
     }
   }
 
-  // Extract name
+  // Extract name and description
   const nameMatch = yamlContent.match(/name:\s*["']?([^"'\n]+)["']?/);
   const name = nameMatch ? nameMatch[1].trim() : 'Unnamed Skill';
+  const descriptionMatch = yamlContent.match(/description:\s*["']?([^"'\n]+)["']?/);
+  const description = descriptionMatch ? descriptionMatch[1].trim() : summarizeSkillContent(body);
 
-  return { name, triggers, content: body };
+  return { name, description, triggers, content: body };
 }
 
 // Find all skill files (fallback - NON-RECURSIVE for backward compat)
@@ -130,12 +157,23 @@ function findMatchingSkillsFallback(prompt, directory, sessionId) {
   const candidates = findSkillFilesFallback(directory);
   const matches = [];
 
-  // Get or create session cache (cap size to prevent unbounded growth)
-  if (!injectedCacheFallback.has(sessionId)) {
-    if (injectedCacheFallback.size > 500) injectedCacheFallback.clear();
-    injectedCacheFallback.set(sessionId, new Set());
+  // File-based session dedup (persists across process spawns)
+  const state = readFallbackState(directory);
+  const now = Date.now();
+
+  // Prune expired sessions to keep the state file small
+  for (const [id, sess] of Object.entries(state.sessions)) {
+    if (now - sess.timestamp > FALLBACK_SESSION_TTL_MS) {
+      delete state.sessions[id];
+    }
   }
-  const alreadyInjected = injectedCacheFallback.get(sessionId);
+
+  const sessionData = state.sessions[sessionId];
+  const alreadyInjected = new Set(
+    sessionData && now - sessionData.timestamp <= FALLBACK_SESSION_TTL_MS
+      ? (sessionData.injectedPaths ?? [])
+      : []
+  );
 
   for (const candidate of candidates) {
     // Skip if already injected this session
@@ -159,6 +197,8 @@ function findMatchingSkillsFallback(prompt, directory, sessionId) {
           path: candidate.path,
           name: skill.name,
           content: skill.content,
+          description: skill.description,
+          summary: summarizeSkillContent(skill.content),
           score,
           scope: candidate.scope,
           triggers: skill.triggers
@@ -173,9 +213,14 @@ function findMatchingSkillsFallback(prompt, directory, sessionId) {
   matches.sort((a, b) => b.score - a.score);
   const selected = matches.slice(0, MAX_SKILLS_PER_SESSION);
 
-  // Mark as injected
-  for (const skill of selected) {
-    alreadyInjected.add(skill.path);
+  // Persist injected paths back to file so future process spawns skip them
+  if (selected.length > 0) {
+    const existing = state.sessions[sessionId]?.injectedPaths ?? [];
+    state.sessions[sessionId] = {
+      injectedPaths: [...new Set([...existing, ...selected.map(s => s.path)])],
+      timestamp: now,
+    };
+    writeFallbackState(directory, state);
   }
 
   return selected;
@@ -201,42 +246,73 @@ function findMatchingSkills(prompt, directory, sessionId) {
     return matches;
   }
 
-  // Fallback (NON-RECURSIVE, in-memory cache)
+  // Fallback (NON-RECURSIVE, file-based dedup via skill-sessions-fallback.json)
   return findMatchingSkillsFallback(prompt, directory, sessionId);
+}
+
+function compactText(text, maxChars) {
+  if (!text || maxChars <= 0) return '';
+  if (text.length <= maxChars) return text;
+  if (maxChars === 1) return '…';
+  return `${text.slice(0, maxChars - 1).trimEnd()}…`;
+}
+
+function summarizeSkillContent(content) {
+  if (!content) return '';
+  const firstUsefulLine = content
+    .split(/\r?\n/)
+    .map(line => line.replace(/^#+\s*/, '').trim())
+    .find(line => line && !line.startsWith('---'));
+  return compactText(firstUsefulLine || content.replace(/\s+/g, ' ').trim(), 240);
+}
+
+function formatSkillDescriptor(skill) {
+  const metadata = {
+    path: skill.path,
+    triggers: skill.triggers,
+    score: skill.score,
+    scope: skill.scope
+  };
+  const summary = skill.description || skill.summary || summarizeSkillContent(skill.content);
+  return compactText([
+    `### ${skill.name} (${skill.scope})`,
+    `<skill-metadata>${JSON.stringify(metadata)}</skill-metadata>`,
+    summary ? `Summary: ${summary}` : '',
+    `Load instructions: if this skill is needed, read ${skill.path} and follow the full instructions there.`,
+  ].filter(Boolean).join('\n'), MAX_LEARNED_SKILL_DESCRIPTOR_CHARS);
 }
 
 // Format skills for injection
 function formatSkillsMessage(skills) {
-  const lines = [
+  const header = [
     '<mnemosyne>',
     '',
     '## Relevant Learned Skills',
     '',
-    'The following skills from previous sessions may help:',
+    'Compact descriptors only; full learned skill bodies stay on disk to avoid prompt bloat.',
     ''
-  ];
+  ].join('\n');
+  const footer = '\n</mnemosyne>';
+  const budget = MAX_LEARNED_SKILLS_CONTEXT_CHARS - header.length - footer.length;
+  const descriptors = [];
+  let used = 0;
 
   for (const skill of skills) {
-    lines.push(`### ${skill.name} (${skill.scope})`);
-
-    // Add metadata block for programmatic parsing
-    const metadata = {
-      path: skill.path,
-      triggers: skill.triggers,
-      score: skill.score,
-      scope: skill.scope
-    };
-    lines.push(`<skill-metadata>${JSON.stringify(metadata)}</skill-metadata>`);
-    lines.push('');
-
-    lines.push(skill.content);
-    lines.push('');
-    lines.push('---');
-    lines.push('');
+    const descriptor = formatSkillDescriptor(skill);
+    const separator = descriptors.length > 0 ? '\n\n---\n\n' : '';
+    if (used + separator.length + descriptor.length > budget) {
+      const omission = `${separator}[Additional learned skills omitted due to ${MAX_LEARNED_SKILLS_CONTEXT_CHARS}-character context budget; use skill metadata paths if needed.]`;
+      const remainingBudget = budget - used;
+      if (remainingBudget > 0) {
+        descriptors.push(compactText(omission, remainingBudget));
+      }
+      break;
+    }
+    descriptors.push(`${separator}${descriptor}`);
+    used += separator.length + descriptor.length;
   }
 
-  lines.push('</mnemosyne>');
-  return lines.join('\n');
+  return `${header}${descriptors.join('')}${footer}`;
 }
 
 // Main

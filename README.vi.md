@@ -15,7 +15,7 @@
 
 *Đừng học Claude Code. Cứ dùng OMC.*
 
-[Bắt đầu nhanh](#bắt-đầu-nhanh) • [Tài liệu](https://yeachan-heo.github.io/oh-my-claudecode-website) • [Tham chiếu CLI](https://yeachan-heo.github.io/oh-my-claudecode-website/docs.html#cli-reference) • [Quy trình](https://yeachan-heo.github.io/oh-my-claudecode-website/docs.html#workflows) • [Hướng dẫn di chuyển](docs/MIGRATION.md)
+[Bắt đầu nhanh](#bắt-đầu-nhanh) • [Tài liệu](https://yeachan-heo.github.io/oh-my-claudecode-website) • [Tham chiếu CLI](https://yeachan-heo.github.io/oh-my-claudecode-website/docs/#cli-reference) • [Quy trình](https://yeachan-heo.github.io/oh-my-claudecode-website/docs/#workflows) • [Hướng dẫn di chuyển](docs/MIGRATION.md) • [Discord](https://discord.gg/PUwSMR9XNk)
 
 ---
 
@@ -31,6 +31,10 @@
 ```bash
 /omc-setup
 ```
+
+Nếu bạn chạy OMC qua `omc --plugin-dir <path>` hoặc `claude --plugin-dir <path>`, hãy thêm `--plugin-dir-mode` vào `omc setup` (hoặc xuất `OMC_PLUGIN_ROOT` trước) để tránh trùng lặp các kỹ năng/tác nhân mà plugin đã cung cấp trong thời gian chạy. Để xem ma trận quyết định đầy đủ và tất cả các cờ có sẵn, hãy xem [phần Plugin directory flags trong REFERENCE.md](./docs/REFERENCE.md#plugin-directory-flags).
+
+<!-- TODO(i18n): verify translation -->
 
 **Bước 3: Xây một thứ gì đó**
 ```
@@ -142,7 +146,7 @@ Nếu gặp sự cố sau khi cập nhật, hãy xóa cache plugin cũ:
 ## Tính năng
 
 ### Các chế độ điều phối
-Nhiều chiến lược cho nhiều tình huống — từ điều phối dựa trên Team đến refactor tiết kiệm token. [Tìm hiểu thêm →](https://yeachan-heo.github.io/oh-my-claudecode-website/docs.html#execution-modes)
+Nhiều chiến lược cho nhiều tình huống — từ điều phối dựa trên Team đến refactor tiết kiệm token. [Tìm hiểu thêm →](https://yeachan-heo.github.io/oh-my-claudecode-website/docs/#execution-modes)
 
 | Mode | Nó là gì | Dùng cho |
 |------|------------|---------|
@@ -165,8 +169,17 @@ Nhiều chiến lược cho nhiều tình huống — từ điều phối dựa 
 
 - **Magic keywords** - `ralph`, `ulw`, `plan` để kiểm soát rõ ràng
 - **HUD statusline** - Chỉ số điều phối theo thời gian thực trong status bar
+  - Nếu bạn khởi chạy Claude Code trực tiếp bằng `claude --plugin-dir <path>` (bỏ qua shim `omc`), hãy xuất `OMC_PLUGIN_ROOT=<path>` trong shell của bạn để gói HUD phân giải thành cùng một checkout như trình tải plugin. Xem [phần Plugin directory flags trong REFERENCE.md](./docs/REFERENCE.md#plugin-directory-flags) để biết chi tiết.
+
+  <!-- TODO(i18n): verify translation -->
 - **Học kỹ năng** - Trích xuất các mẫu tái sử dụng từ các phiên làm việc
 - **Phân tích & theo dõi chi phí** - Hiểu mức sử dụng token trên mọi phiên
+
+### Đóng góp
+
+Bạn muốn đóng góp cho OMC? Xem [CONTRIBUTING.md](./CONTRIBUTING.md) để biết hướng dẫn nhà phát triển đầy đủ, bao gồm cách fork, thiết lập checkout cục bộ, liên kết nó làm plugin hoạt động, chạy các bài kiểm tra và gửi PR.
+
+<!-- TODO(i18n): verify translation -->
 
 ### Kỹ năng Tùy chỉnh
 
@@ -320,10 +333,10 @@ Xem `scripts/openclaw-gateway-demo.mjs` để tham khảo gateway chuyển tiế
 ## Tài liệu
 
 - **[Tham chiếu đầy đủ](docs/REFERENCE.md)** - Tài liệu đầy đủ về tính năng
-- **[Tham chiếu CLI](https://yeachan-heo.github.io/oh-my-claudecode-website/docs.html#cli-reference)** - Tất cả lệnh, cờ và công cụ `omc`
-- **[Hướng dẫn thông báo](https://yeachan-heo.github.io/oh-my-claudecode-website/docs.html#notifications)** - Thiết lập Discord, Telegram, Slack và webhook
-- **[Quy trình khuyến nghị](https://yeachan-heo.github.io/oh-my-claudecode-website/docs.html#workflows)** - Chuỗi skill đã qua thực chiến cho các tác vụ phổ biến
-- **[Ghi chú phát hành](https://yeachan-heo.github.io/oh-my-claudecode-website/docs.html#release-notes)** - Có gì mới trong mỗi phiên bản
+- **[Tham chiếu CLI](https://yeachan-heo.github.io/oh-my-claudecode-website/docs/#cli-reference)** - Tất cả lệnh, cờ và công cụ `omc`
+- **[Hướng dẫn thông báo](https://yeachan-heo.github.io/oh-my-claudecode-website/docs/#notifications)** - Thiết lập Discord, Telegram, Slack và webhook
+- **[Quy trình khuyến nghị](https://yeachan-heo.github.io/oh-my-claudecode-website/docs/#workflows)** - Chuỗi skill đã qua thực chiến cho các tác vụ phổ biến
+- **[Ghi chú phát hành](https://yeachan-heo.github.io/oh-my-claudecode-website/docs/#release-notes)** - Có gì mới trong mỗi phiên bản
 - **[Website](https://yeachan-heo.github.io/oh-my-claudecode-website)** - Hướng dẫn tương tác và ví dụ
 - **[Hướng dẫn di chuyển](docs/MIGRATION.md)** - Nâng cấp từ v2.x
 - **[Kiến trúc](docs/ARCHITECTURE.md)** - Cách nó hoạt động phía sau

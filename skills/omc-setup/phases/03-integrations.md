@@ -5,7 +5,7 @@
 ## Step 3.1: Verify Plugin Installation
 
 ```bash
-grep -q "oh-my-claudecode" ~/.claude/settings.json && echo "Plugin verified" || echo "Plugin NOT found - run: claude /install-plugin oh-my-claudecode"
+grep -q "oh-my-claudecode" "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/settings.json" && echo "Plugin verified" || echo "Plugin NOT found - run: claude /install-plugin oh-my-claudecode"
 ```
 
 ## Step 3.2: Offer MCP Server Configuration
@@ -44,7 +44,7 @@ Use AskUserQuestion:
 First, read the current settings.json:
 
 ```bash
-SETTINGS_FILE="$HOME/.claude/settings.json"
+SETTINGS_FILE="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/settings.json"
 
 if [ -f "$SETTINGS_FILE" ]; then
   echo "Current settings.json found"
@@ -54,12 +54,12 @@ else
 fi
 ```
 
-Then use the Read tool to read `~/.claude/settings.json` (if it exists). Use the Edit tool to merge the teams configuration while preserving ALL existing settings.
+Then use the Read tool to read `${CLAUDE_CONFIG_DIR:-~/.claude}/settings.json` (if it exists). Use the Edit tool to merge the teams configuration while preserving ALL existing settings.
 
 Use jq to safely merge without overwriting existing settings:
 
 ```bash
-SETTINGS_FILE="$HOME/.claude/settings.json"
+SETTINGS_FILE="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/settings.json"
 
 if [ -f "$SETTINGS_FILE" ]; then
   TEMP_FILE=$(mktemp)
@@ -94,7 +94,7 @@ Use AskUserQuestion:
 If user chooses anything other than "Auto", add `teammateMode` to settings.json:
 
 ```bash
-SETTINGS_FILE="$HOME/.claude/settings.json"
+SETTINGS_FILE="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/settings.json"
 
 # TEAMMATE_MODE is "in-process" or "tmux" based on user choice
 # Skip this if user chose "Auto" (that's the default)
@@ -113,17 +113,17 @@ Use AskUserQuestion with multiple questions:
 2. **5 agents (maximum)** - Maximum parallelism for large tasks
 3. **2 agents** - Conservative, for smaller projects
 
-**Question 2:** "Which agent type should teammates use by default?"
+**Question 2:** "Which CLI provider should teammates use by default?"
 
 **Options:**
-1. **executor (Recommended)** - General-purpose code implementation agent
-2. **debugger** - Specialized for build/type error fixing and debugging
-3. **designer** - Specialized for UI/frontend work
+1. **claude (Recommended)** - Default provider with the widest compatibility
+2. **codex** - Use Codex CLI workers by default when installed
+3. **gemini** - Use Gemini CLI workers by default when installed
 
 Store the team configuration in `~/.claude/.omc-config.json`:
 
 ```bash
-CONFIG_FILE="$HOME/.claude/.omc-config.json"
+CONFIG_FILE="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/.omc-config.json"
 mkdir -p "$(dirname "$CONFIG_FILE")"
 
 if [ -f "$CONFIG_FILE" ]; then
@@ -136,11 +136,11 @@ fi
 echo "$EXISTING" | jq \
   --argjson maxAgents MAX_AGENTS \
   --arg agentType "AGENT_TYPE" \
-  '. + {team: {maxAgents: $maxAgents, defaultAgentType: $agentType, monitorIntervalMs: 30000, shutdownTimeoutMs: 15000}}' > "$CONFIG_FILE"
+  '. + {team: {ops: {maxAgents: $maxAgents, defaultAgentType: $agentType, monitorIntervalMs: 30000, shutdownTimeoutMs: 15000}}}' > "$CONFIG_FILE"
 
 echo "Team configuration saved:"
 echo "  Max agents: MAX_AGENTS"
-echo "  Default agent: AGENT_TYPE"
+echo "  Default provider: AGENT_TYPE"
 echo "  Model: teammates inherit your session model"
 ```
 
@@ -151,7 +151,7 @@ echo "  Model: teammates inherit your session model"
 After all modifications, verify settings.json is valid JSON and contains the expected keys:
 
 ```bash
-SETTINGS_FILE="$HOME/.claude/settings.json"
+SETTINGS_FILE="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/settings.json"
 
 if jq empty "$SETTINGS_FILE" 2>/dev/null; then
   echo "settings.json: valid JSON"

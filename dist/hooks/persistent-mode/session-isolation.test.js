@@ -5,6 +5,18 @@ import { join } from "path";
 import { execSync } from "child_process";
 import { checkPersistentModes } from "./index.js";
 import { activateUltrawork, deactivateUltrawork } from "../ultrawork/index.js";
+function writePendingTodo(tempDir, content) {
+    mkdirSync(join(tempDir, '.claude'), { recursive: true });
+    writeFileSync(join(tempDir, '.claude', 'todos.json'), JSON.stringify({
+        todos: [
+            {
+                content,
+                status: 'pending',
+                priority: 'high',
+            },
+        ],
+    }));
+}
 describe("Persistent Mode Session Isolation (Issue #311)", () => {
     let tempDir;
     beforeEach(() => {
@@ -18,6 +30,7 @@ describe("Persistent Mode Session Isolation (Issue #311)", () => {
         it("should block stop when session_id matches active ultrawork", async () => {
             const sessionId = "session-owner";
             activateUltrawork("Fix the bug", sessionId, tempDir);
+            writePendingTodo(tempDir, "Finish the bug fix");
             const result = await checkPersistentModes(sessionId, tempDir);
             expect(result.shouldBlock).toBe(true);
             expect(result.mode).toBe("ultrawork");
@@ -49,6 +62,7 @@ describe("Persistent Mode Session Isolation (Issue #311)", () => {
         });
         it("should support session-scoped state files", async () => {
             const sessionId = "session-scoped-test";
+            writePendingTodo(tempDir, "Finish the session-scoped task");
             // Create state in session-scoped directory
             const sessionDir = join(tempDir, ".omc", "state", "sessions", sessionId);
             mkdirSync(sessionDir, { recursive: true });
@@ -189,6 +203,22 @@ describe("Persistent Mode Session Isolation (Issue #311)", () => {
             });
             // Invalid sessionId sanitizes to "", falls back to legacy path, blocks
             expect(output.decision).toBe("block");
+        });
+        it("should allow stop when cancel signal only includes requested_at", () => {
+            const sessionId = "session-cancel-requested-at";
+            createUltraworkState(tempDir, sessionId, "Task being cancelled");
+            const sessionDir = join(tempDir, ".omc", "state", "sessions", sessionId);
+            writeFileSync(join(sessionDir, "cancel-signal-state.json"), JSON.stringify({
+                active: true,
+                requested_at: new Date().toISOString(),
+                source: "test"
+            }, null, 2));
+            const output = runPersistentModeScript({
+                directory: tempDir,
+                sessionId,
+            });
+            expect(output.continue).toBe(true);
+            expect(output.decision).toBeUndefined();
         });
         it("should NOT block for legacy autopilot state when sessionId is provided", () => {
             const stateDir = join(tempDir, ".omc", "state");
