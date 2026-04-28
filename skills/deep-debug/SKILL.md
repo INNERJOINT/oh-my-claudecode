@@ -1,5 +1,5 @@
 ---
-name: debug
+name: deep-debug
 description: Diagnose the current OMC session or repo state using logs, traces, state, and focused reproduction
 ---
 
