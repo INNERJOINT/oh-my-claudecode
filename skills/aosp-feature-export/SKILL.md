@@ -7,7 +7,7 @@ level: 3
 
 # AOSP Feature Export Skill
 
-Takes a feature point description and related git commit hashes as input, iteratively discovers all related AOSP projects via `aosp_code_search`, and outputs a comprehensive markdown document archived to `.omc/aosp-exports/`.
+Takes a feature point description and related git commit hashes as input, iteratively discovers all related AOSP projects via `sourcepilot`, and outputs a comprehensive markdown document archived to `.omc/aosp-exports/`.
 
 ## Usage
 
@@ -32,7 +32,7 @@ state_write(mode="aosp-feature-export", active=true, task_description="<descript
 
 ### Step 1: Health Check
 
-Call `aosp_code_search` with `tool: "list_tools"` to verify MCP server reachability. Then issue one lightweight search query to confirm upstream is responding.
+Call `sourcepilot` with `tool: "list_tools"` to verify MCP server reachability. Then issue one lightweight search query to confirm upstream is responding.
 
 On failure:
 ```

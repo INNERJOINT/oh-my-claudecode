@@ -167,7 +167,7 @@ export const aospCodeSearchTool: ToolDefinition<{
   tool: z.ZodString;
   arguments: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodUnion<[z.ZodString, z.ZodNumber, z.ZodBoolean]>>>;
 }> = {
-  name: 'aosp_code_search',
+  name: 'sourcepilot',
   description: 'Search AOSP (Android Open Source Project) codebase via remote MCP server. Use the "tool" param to specify which remote tool to call (e.g. "search_code", "search_symbol", "search_file"), and "arguments" for tool-specific parameters.',
   annotations: { readOnlyHint: true, openWorldHint: true },
   schema: {

@@ -40,7 +40,7 @@ Automates Android bug root-cause analysis by fetching JIRA issue details via mcp
 
 2. **MCP health checks** (run both in parallel):
    - JIRA: call `jira_get_issue(issue_key=<KEY>, fields="summary")` — if fails, abort with "mcp-atlassian unreachable. Check JIRA_URL, JIRA_USERNAME, JIRA_API_TOKEN env vars."
-   - AOSP: call `aosp_code_search(tool="list_tools")` — if fails, abort with "aosp_code_search MCP unreachable. Check AOSP_MCP_URL and AOSP_MCP_KEY env vars."
+   - AOSP: call `sourcepilot(tool="list_tools")` — if fails, abort with "sourcepilot MCP unreachable. Check AOSP_MCP_URL and AOSP_MCP_KEY env vars."
 
 3. **Initialize state**:
 ```
@@ -265,7 +265,7 @@ Search targets:
 <list of class names, function names, native libraries from anomalies>
 
 For each target:
-1. Use aosp_code_search — first call {tool: 'list_tools'} to discover available tools
+1. Use sourcepilot — first call {tool: 'list_tools'} to discover available tools
 2. Search for the class/function definition in AOSP
 3. Find error handling code paths, especially around the crash point
 4. Look for related comments, TODOs, known limitations
@@ -348,7 +348,7 @@ Timeline context:
 <relevant_timeline_events>
 
 Your task:
-1. Use aosp_code_search — first call {tool: 'list_tools'} to discover available tools
+1. Use sourcepilot — first call {tool: 'list_tools'} to discover available tools
 2. Search for each crash-related function/class in AOSP source
 3. Find the code path that leads to the crash
 4. Look for known issues, TODOs, or error handling gaps in the source
@@ -497,7 +497,7 @@ Update state at each phase boundary for resumability. On resume, read state via 
 - `log_unboxer unpack` — decompress downloaded zip/archive files (preferred over plain unzip)
 - `log_unboxer download --sn` — fallback: download device logs by serial number from log server (last 90 days). Do NOT use `--url`.
 - `jira_add_comment` — post RCA report as comment on JIRA issue (mcp-atlassian)
-- `aosp_code_search` — search AOSP source for crash-related code (always, not conditional)
+- `sourcepilot` — search AOSP source for crash-related code (always, not conditional)
 - `state_write` / `state_read` / `state_clear` — phase persistence (mode="jira-analyze")
 - `Agent(subagent_type="Explore", model="haiku")` — file classification (Phase 2)
 - `Agent(subagent_type="oh-my-claudecode:executor", model="sonnet")` — log parsing per type + timeline merge (Phase 3)
@@ -559,7 +559,7 @@ Why bad: AOSP search must run for ALL hypotheses, not just the highest-ranked on
 **Must have:**
 - **log_unboxer 优先**: 解压日志必须优先使用 `log_unboxer unpack`，仅当 log_unboxer 不可用时才回退到 `unzip`
 - mcp-atlassian for JIRA access (not jira-cli)
-- aosp_code_search for AOSP source (always, not conditional) — **Phase 4 AOSP 源码分析是必选阶段**，除非十分确认问题与 AOSP 源码完全无关才可跳过
+- sourcepilot for AOSP source (always, not conditional) — **Phase 4 AOSP 源码分析是必选阶段**，除非十分确认问题与 AOSP 源码完全无关才可跳过
 - aosp-investigator subagent for both Phase 4 (AOSP context) and Phase 5 (hypothesis investigation)
 - File-based base64 decode (not echo pipe)
 - Lightweight state (<10KB, file paths not data)

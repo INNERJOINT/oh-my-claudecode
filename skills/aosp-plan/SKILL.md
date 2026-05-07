@@ -36,7 +36,7 @@ Call `state_write(mode="aosp-plan", active=true)` before any other action. This 
 
 ### Step 1: MCP Health Check
 
-Call `aosp_code_search` with `tool: "list_tools"` once at startup to verify the MCP server is reachable and discover available remote tool names.
+Call `sourcepilot` with `tool: "list_tools"` once at startup to verify the MCP server is reachable and discover available remote tool names.
 
 If the call fails, call `state_clear(mode="aosp-plan")` and abort immediately with:
 
@@ -72,7 +72,7 @@ Fire N `aosp-investigator` subagents in parallel (one per facet). N comes from `
 Agent(
   subagent_type="oh-my-claudecode:aosp-investigator",
   model="sonnet",
-  prompt="Investigate AOSP facet: <facet description>. Use aosp_code_search tool. Report structured findings with file paths, code snippets, and architectural observations."
+  prompt="Investigate AOSP facet: <facet description>. Use sourcepilot tool. Report structured findings with file paths, code snippets, and architectural observations."
 )
 ```
 
