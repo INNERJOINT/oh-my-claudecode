@@ -1,26 +1,38 @@
 ---
 name: aosp-feature-export
 description: Export AOSP feature element documentation by iteratively searching related code across all AOSP projects
-argument-hint: "<feature description>" --commits <hash1,hash2,...>
+argument-hint: "<feature description>" --links <url1,url2,...>
 level: 3
 ---
 
 # AOSP Feature Export Skill
 
-Takes a feature point description and related git commit hashes as input, iteratively discovers all related AOSP projects via `sourcepilot`, and outputs a comprehensive markdown document archived to `.omc/aosp-exports/`.
+Documents vendor/third-party features added on top of AOSP. Takes a feature description and GitLab MR/commit URLs (vendor changes) as input, fetches diffs via GitLab MCP tools to identify modification points, then uses `sourcepilot` to search the AOSP codebase for the original code being modified or extended. Outputs a comprehensive Chinese-language markdown document that maps the vendor feature across AOSP layers, archived to `.omc/aosp-exports/`.
+
+**Key distinction:** The feature being documented is NOT an AOSP built-in feature. It is a vendor customization — code added or modified by the third-party vendor on top of AOSP. The AOSP search phase finds the original context that the vendor code interacts with.
 
 ## Usage
 
 ```
+/oh-my-claudecode:aosp-feature-export "公共DNS" --links https://gitlab.gz.cvte.cn/mt8781_androidu/platform/packages/modules/Connectivity/-/merge_requests/3/diffs
+/oh-my-claudecode:aosp-feature-export "fingerprint unlock" --links https://gitlab.gz.cvte.cn/project/path/-/commit/d2794bf5a8132dc9
+/oh-my-claudecode:aosp-feature-export "USB audio routing" --links <mr-url1>,<commit-url2>
 /oh-my-claudecode:aosp-feature-export "夜景模式" --commits abc123,def456
-/oh-my-claudecode:aosp-feature-export "fingerprint unlock" --commits a1b2c3
 /oh-my-claudecode:aosp-feature-export "USB audio routing"
 ```
 
 ## Flags
 
-- `--commits <hash1,hash2,...>`: Comma-separated git commit hashes as starting points for keyword extraction
-- Without `--commits`: Uses only the description text for keyword extraction
+- `--links <url1,url2,...>`: Comma-separated GitLab MR diff or commit URLs as starting points for keyword extraction (primary input mode)
+- `--commits <hash1,hash2,...>`: Comma-separated local git commit hashes as starting points (secondary, for local-only workflows)
+- Without either flag: Uses only the description text for keyword extraction
+
+### Supported URL Formats
+
+- **MR diffs:** `https://{host}/{project_path}/-/merge_requests/{iid}/diffs` (trailing `/diffs` optional)
+- **Commit:** `https://{host}/{project_path}/-/commit/{sha}`
+
+Future: URL routing is provider-dispatched. Currently supports GitLab only. GitHub/Gerrit patterns may be added later.
 
 ## Protocol
 
@@ -42,14 +54,42 @@ Abort with: `AOSP MCP server unreachable. Check AOSP_MCP_URL and AOSP_MCP_KEY en
 
 ### Step 2: Keyword Extraction
 
-1. If `--commits` provided, run `git show --stat <hash>` for each commit:
+#### 2a: Fetch change data from links or commits
+
+**If `--links` provided**, parse each URL and call GitLab MCP tools:
+
+1. For each URL, determine type by pattern matching:
+   - **MR URL** (`{host}/{project_path}/-/merge_requests/{iid}` with optional `/diffs`):
+     - Extract `project_id` = `{project_path}` (e.g., `mt8781_androidu/platform/packages/modules/Connectivity`)
+     - Extract `merge_request_iid` = `{iid}`
+     - Call `mcp__gitlab__get_merge_request(project_id, merge_request_iid)` → extract MR title and description
+     - Call `mcp__gitlab__get_merge_request_diffs(project_id, merge_request_iid)` → extract changed file paths (old_path, new_path) and diff content
+   - **Commit URL** (`{host}/{project_path}/-/commit/{sha}`):
+     - Extract `project_id` = `{project_path}`
+     - Extract `sha` = `{sha}`
+     - Call `mcp__gitlab__get_commit(project_id, sha)` → extract commit message
+     - Call `mcp__gitlab__get_commit_diff(project_id, sha, full_diff=true)` → extract changed file paths and diff content
+
+2. From fetched data, extract:
+   - Changed file paths (strip extensions to get class/module names)
+   - Class/interface names from path components
+   - Noun phrases from MR title/description or commit messages
+   - Key identifiers from diff additions (class declarations, method names, constants)
+
+3. **Error handling:** If any URL returns an error (unreachable, 404, permission denied), log it and continue with remaining URLs. If ALL URLs fail, fall back to description-only mode.
+
+**If `--commits` provided** (secondary mode for local-only workflows), run `git show --stat <hash>` for each commit:
    - Extract changed file paths (strip extensions to get class/module names)
    - Extract class/interface names from path components
    - Extract noun phrases from commit messages
-2. If commits are unavailable locally, fall back to description text only
-3. From description text: extract noun phrases, domain terms, subsystem names
-4. Deduplicate all keywords, cap at 10-15
-5. Group into 3 keyword groups by subsystem area (e.g., HAL-related, Framework-related, App-related)
+   - If commits are unavailable locally, fall back to description text only
+
+#### 2b: Build keyword set
+
+1. From description text: extract noun phrases, domain terms, subsystem names
+2. Merge with keywords extracted from links/commits (if any)
+3. Deduplicate all keywords, cap at 10-15
+4. Group into 3 keyword groups by subsystem area (e.g., HAL-related, Framework-related, App-related)
 
 ### Step 3: Phase 1 — Project Discovery
 
@@ -58,18 +98,20 @@ Spawn 3 `aosp-investigator` subagents in parallel. Each investigator is given th
 ```
 Agent(
   subagent_type="oh-my-claudecode:aosp-investigator",
-  prompt="Investigate AOSP for the feature: '<description>'.
+  prompt="Investigate AOSP for the original code related to a VENDOR feature: '<description>'.
   
-  Context from git commits (if available):
-  <commit messages, changed file paths, and diff summaries from Step 2>
+  This is a third-party/vendor customization, NOT an AOSP built-in feature. The vendor has modified or extended AOSP code to implement this feature.
   
-  Your mission: Search AOSP comprehensively to find ALL source code related to this feature.
-  - Search by feature keywords, class names, interface names, subsystem names
-  - Follow cross-references: if you find an interface, search for its implementations and callers
+  Vendor modification points (from GitLab diffs):
+  <changed file paths, class names, method names, and diff summaries from Step 2>
+  
+  Your mission: Search AOSP to find the ORIGINAL code that the vendor modifications interact with.
+  - Search for the original AOSP classes/interfaces that the vendor code modifies, extends, or calls
+  - Follow cross-references: if the vendor modifies an interface, find its original definition, implementations, and callers in AOSP
   - Cover multiple AOSP layers: HAL, native, framework, system services, apps
-  - For each finding, document: file path, code snippet, architectural role, and any interfaces it exposes/consumes
+  - For each finding, document: file path, code snippet, architectural role, and how it relates to the vendor modification points
   
-  Report ALL discovered AOSP file paths grouped by theme. Include architectural observations about how the components connect."
+  Report ALL discovered AOSP file paths grouped by theme. Include architectural observations about how the vendor changes hook into the AOSP architecture."
 )
 ```
 
@@ -84,7 +126,9 @@ Each round, spawn 2 `aosp-investigator` subagents. Pass them the accumulated fin
 ```
 Agent(
   subagent_type="oh-my-claudecode:aosp-investigator",
-  prompt="Continue investigating AOSP for the feature: '<description>'.
+  prompt="Continue investigating AOSP for the original code related to a VENDOR feature: '<description>'.
+  
+  This is a third-party/vendor customization. The vendor has modified or extended AOSP code.
   
   Previously discovered AOSP paths (DO NOT re-search these):
   <list of discovered_prefixes>
@@ -92,13 +136,13 @@ Agent(
   Key interfaces and classes found so far:
   <extracted interface names, class names, AIDL/HIDL definitions from prior rounds>
   
-  Your mission: Find AOSP code OUTSIDE the already-discovered areas that is related to this feature.
+  Your mission: Find AOSP code OUTSIDE the already-discovered areas that the vendor modifications interact with.
   - Search for callers/implementors of the interfaces found so far
-  - Look for related subsystems that interact with the known components
-  - Check for configuration, SELinux policies, init scripts, or test code related to this feature
-  - Explore upstream/downstream dependencies not yet covered
+  - Look for related AOSP subsystems that the vendor feature depends on or extends
+  - Check for configuration, SELinux policies, init scripts, or test code in AOSP related to the modified components
+  - Explore upstream/downstream AOSP dependencies not yet covered
   
-  Report only NEW findings (paths not in the already-discovered list). Group by theme with architectural observations."
+  Report only NEW findings (paths not in the already-discovered list). Group by theme with observations about how vendor changes hook into these AOSP components."
 )
 ```
 
@@ -118,7 +162,8 @@ The orchestrator's only heavy-lifting phase — merge and structure all investig
 4. For each project group: collect key interfaces, code patterns, and design decisions reported by investigators
 5. Synthesize an overall "Design Principles" section from investigators' architectural observations
 6. Map cross-project dependencies from investigators' interface-caller/implementor findings
-7. Build the output document using the template below
+7. **Construct commit URLs:** For each input link's project, build browsable commit URLs using format `https://{host}/{project_path}/-/commit/{sha}`. If the input was an MR, use the MR's source commits. Include these URLs in the output under "Related Commits".
+8. Build the output document **in Chinese** using the template below
 
 ### Step 6: Save
 
@@ -140,68 +185,76 @@ Skill is idempotent — re-running with the same inputs overwrites the output fi
 ## Output Template
 
 ```markdown
-# AOSP Feature Export: {feature_name}
+# Vendor功能元导出: {feature_name}
 
-## Overview
-- **Feature:** {description}
-- **Export Date:** {date}
-- **Input Commits:** {commit_list or "None"}
-- **Keywords Extracted:** {keyword_list}
-- **Search Rounds:** {n}/5
-- **Projects Found:** {count}
-- **Convergence:** {converged at round X / hit max rounds}
+## 概览
+- **功能:** {description}
+- **类型:** Vendor/第三方定制功能
+- **导出日期:** {date}
+- **输入链接:** {url_list or "无"}
+- **输入提交:** {commit_list or "无"}
+- **提取关键词:** {keyword_list}
+- **搜索轮次:** {n}/5
+- **发现AOSP关联项目数:** {count}
+- **收敛情况:** {在第X轮收敛 / 达到最大轮次}
 
-## Design Principles
+## Vendor修改概述
 
-{AI-synthesized explanation of how this feature is designed and implemented across AOSP layers. Cover the architectural rationale, key abstractions, and cross-layer communication patterns.}
+{基于GitLab diff的vendor改动摘要。说明vendor修改了哪些文件、增加了什么逻辑、修改的入口点在哪里。}
 
-## Related AOSP Projects
+## 设计原理
 
-| Project | Path | Layer | Relevance |
-|---------|------|-------|-----------|
-| {name} | {aosp_path} | {HAL/Framework/System/App} | {why related} |
+{AI综合说明该vendor功能如何嵌入AOSP架构。涵盖vendor代码的hook点、对AOSP原有逻辑的修改方式、跨层交互模式。}
+
+## 相关AOSP项目
+
+| 项目 | 路径 | 层级 | 与Vendor功能的关系 |
+|------|------|------|-------------------|
+| {name} | {aosp_path} | {HAL/Framework/System/App} | {vendor如何修改或依赖此项目} |
 | ... | ... | ... | ... |
 
-## Key Interfaces
+## 关键接口
 
-### {Interface Name}
-- **File:** {aosp/path/to/file}
-- **Type:** AIDL / HIDL / Java API / Native / JNI
-- **Purpose:** {what this interface does for the feature}
-- **Snippet:**
+### {接口名称}
+- **文件:** {aosp/path/to/file}
+- **类型:** AIDL / HIDL / Java API / Native / JNI
+- **AOSP原始用途:** {该接口在AOSP中的原始作用}
+- **Vendor修改方式:** {vendor如何修改、扩展或调用此接口}
+- **代码片段:**
   ```
   {relevant code excerpt}
   ```
 
-## Code Paths Per Project
+## 各项目代码路径
 
-### {Project Name} ({aosp_path_prefix})
-- **Key Files:**
-  - `{file_path}`: {purpose}
-  - `{file_path}`: {purpose}
-- **Related Commits:**
-  - `{hash}` {message} ({date}) [if available]
-- **Design Notes:** {observations about this project's role}
+### {项目名称} ({aosp_path_prefix})
+- **关键文件:**
+  - `{file_path}`: {用途}
+  - `{file_path}`: {用途}
+- **Vendor相关提交:**
+  - [{commit_message}]({https://gitlab.host/project_path/-/commit/full_sha}) ({date})
+- **设计说明:** {vendor代码如何hook进此AOSP项目}
 
-## Architecture Overview
+## 架构总览
 
-{How the feature spans across Android layers: App → Framework → Native → HAL → Kernel. Include data flow and control flow descriptions.}
+{Vendor功能如何跨越Android各层嵌入: App → Framework → Native → HAL → Kernel。标注vendor修改点与AOSP原始代码的边界。}
 
-## Dependencies
+## 依赖关系
 
-- {project A} depends on {project B} via {interface/mechanism}
+- Vendor功能依赖 {AOSP项目A} 的 {接口/机制}
+- Vendor功能修改了 {AOSP项目B} 的 {类/方法}
 - ...
 
-## Investigation Log
+## 调查日志
 
-| Round | Queries | New Prefixes | Total Prefixes | Total Files |
-|-------|---------|--------------|----------------|-------------|
-| 1 (Discovery) | {keyword groups} | {n} | {n} | {n} |
+| 轮次 | 查询 | 新增前缀 | 总前缀数 | 总文件数 |
+|------|------|----------|----------|----------|
+| 1 (发现) | {keyword groups} | {n} | {n} | {n} |
 | 2 | {new queries} | {n} | {n} | {n} |
 | ... | ... | ... | ... | ... |
 | {final} | {queries} | {n} | {n} | {n} |
 
-**Termination reason:** {converged (< 3 new prefixes) / max rounds reached / partial failure}
+**终止原因:** {收敛 (< 3个新前缀) / 达到最大轮次 / 部分失败}
 ```
 
 ## Keyword Triggers
