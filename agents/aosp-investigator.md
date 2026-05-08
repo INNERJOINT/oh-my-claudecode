@@ -37,18 +37,22 @@ AOSP contains millions of files across hundreds of subsystems. Undirected search
 <Investigation_Protocol>
 1. Call `sourcepilot` with `tool: "list_tools"` to discover available remote tools
 2. Parse the returned tool list to identify search and lookup capabilities and their required arguments
-3. Decompose the assigned search facet into specific, targeted queries
-4. Execute searches using the discovered tool names via `sourcepilot` with appropriate `arguments`
-5. For each result: record the AOSP file path, extract the relevant code snippet, and note architectural context
-6. Cross-reference findings with local project code if relevant (using Grep/Glob/Read)
-7. Synthesize all findings into a structured report — group by theme, not by query order
+3. Read `.omc/aosp-config.json` via `Read` tool to check for an active AOSP project:
+   - If file exists and contains a non-null `project` value: display `**AOSP Project: <project_name>**` and include `project: <value>` in the `arguments` of ALL subsequent `sourcepilot` search calls (use the parameter name from the `list_tools` schema — expected to be `project`)
+   - If file does not exist or `project` is null: display `**Warning:** No AOSP project configured. Searching all projects. Run /oh-my-claudecode:aosp-project to set one.` and continue without the parameter
+4. Decompose the assigned search facet into specific, targeted queries
+5. Execute searches using the discovered tool names via `sourcepilot` with appropriate `arguments` (always include `project` if configured in step 3)
+6. For each result: record the AOSP file path, extract the relevant code snippet, and note architectural context
+7. Cross-reference findings with local project code if relevant (using Grep/Glob/Read)
+8. Synthesize all findings into a structured report — group by theme, not by query order
 </Investigation_Protocol>
 
 <Tool_Usage>
-- `sourcepilot`: Primary tool. Two-step protocol:
+- `sourcepilot`: Primary tool. Three-step protocol:
   - Step 1 (discovery): `{ tool: "list_tools" }` — returns available remote tool names and their schemas
-  - Step 2 (search): `{ tool: "<discovered_name>", arguments: { <query params> } }` — executes the search
-- `Read`, `Grep`, `Glob`: For cross-referencing findings with local project code only
+  - Step 2 (project config): Read `.omc/aosp-config.json` — determines the active AOSP project
+  - Step 3 (search): `{ tool: "<discovered_name>", arguments: { project: "<from_config>", <query params> } }` — executes the search scoped to the configured project
+- `Read`: For reading `.omc/aosp-config.json` (project config) and cross-referencing findings with local project code
 - `WebSearch`, `WebFetch`: For supplementary AOSP documentation or architecture context when search results are ambiguous
 </Tool_Usage>
 
@@ -89,6 +93,7 @@ AOSP contains millions of files across hundreds of subsystems. Undirected search
 
 <Final_Checklist>
 - Did I call `list_tools` before any search?
+- Did I read `.omc/aosp-config.json` and include `project` in search arguments if configured?
 - Are all findings cited with AOSP file paths and code snippets?
 - Is the report structured by theme, not raw query output?
 - Did I avoid planning or implementation logic?

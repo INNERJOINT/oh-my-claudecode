@@ -42,7 +42,12 @@ Automates Android bug root-cause analysis by fetching JIRA issue details via mcp
    - JIRA: call `jira_get_issue(issue_key=<KEY>, fields="summary")` — if fails, abort with "mcp-atlassian unreachable. Check JIRA_URL, JIRA_USERNAME, JIRA_API_TOKEN env vars."
    - AOSP: call `sourcepilot(tool="list_tools")` — if fails, abort with "sourcepilot MCP unreachable. Check AOSP_MCP_URL and AOSP_MCP_KEY env vars."
 
-3. **Initialize state**:
+3. **Display active AOSP project**: Read `.omc/aosp-config.json`:
+   - If configured: display `**🔍 AOSP Project: <project_name>**` prominently
+   - If not configured: display `**⚠ 未配置 AOSP 项目** — 搜索将不限定项目范围。运行 /oh-my-claudecode:aosp-project 设置项目。`
+   (The `aosp-investigator` subagent reads this config and passes `project` to search calls automatically.)
+
+4. **Initialize state**:
 ```
 state_write(mode="jira-analyze", active=true, current_phase="initialize", state={
   "issue_key": "<KEY>",
@@ -56,7 +61,7 @@ state_write(mode="jira-analyze", active=true, current_phase="initialize", state=
 })
 ```
 
-4. **Create temp directory**:
+5. **Create temp directory**:
 ```bash
 mkdir -p /tmp/jira-analyze-<KEY>/extracted
 ```

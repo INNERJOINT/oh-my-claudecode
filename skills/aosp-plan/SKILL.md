@@ -46,6 +46,12 @@ AOSP MCP server unreachable. Check AOSP_MCP_URL and AOSP_MCP_KEY environment var
 
 Do NOT proceed to spawn agents if this check fails.
 
+After health check passes, read `.omc/aosp-config.json` to display the active AOSP project:
+- If configured: display `**🔍 AOSP Project: <project_name>**` prominently
+- If not configured: display `**⚠ 未配置 AOSP 项目** — 搜索将不限定项目范围。运行 /oh-my-claudecode:aosp-project 设置项目。`
+
+(The `aosp-investigator` subagent reads this config and passes `project` to search calls automatically.)
+
 ### Step 2: Facet Decomposition
 
 Given the user query, decompose into 2–N independent investigation facets. Each facet targets a different aspect of the AOSP codebase. Show the decomposition to the user:
