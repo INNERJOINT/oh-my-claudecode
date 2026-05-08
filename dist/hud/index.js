@@ -212,11 +212,6 @@ async function main(watchMode = false, skipInit = false) {
             return;
         }
         const cwd = resolveToWorktreeRoot(stdin.cwd || undefined);
-        // Initialize HUD state (cleanup stale/orphaned tasks)
-        // Must happen after cwd resolution so cleanup targets the correct project directory
-        if (!skipInit) {
-            await initializeHUDState(cwd);
-        }
         // Read configuration (before transcript parsing so we can use staleTaskThresholdMinutes)
         // Clone to avoid mutating shared DEFAULT_HUD_CONFIG when applying runtime width detection
         const config = { ...readHudConfig() };

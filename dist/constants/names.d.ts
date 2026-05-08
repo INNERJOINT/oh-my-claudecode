@@ -28,6 +28,7 @@ export declare const TOOL_CATEGORIES: {
     readonly SHARED_MEMORY: "shared-memory";
     readonly DEEPINIT: "deepinit";
     readonly WIKI: "wiki";
+    readonly AOSP: "aosp";
 };
 export type ToolCategory = typeof TOOL_CATEGORIES[keyof typeof TOOL_CATEGORIES];
 export declare const HOOK_EVENTS: {

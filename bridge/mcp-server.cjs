@@ -26497,7 +26497,8 @@ var TOOL_CATEGORIES = {
   GEMINI: "gemini",
   SHARED_MEMORY: "shared-memory",
   DEEPINIT: "deepinit",
-  WIKI: "wiki"
+  WIKI: "wiki",
+  AOSP: "aosp"
 };
 
 // src/tools/deepinit-manifest.ts

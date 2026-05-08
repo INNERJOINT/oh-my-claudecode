@@ -29,6 +29,7 @@ export const TOOL_CATEGORIES = {
     SHARED_MEMORY: 'shared-memory',
     DEEPINIT: 'deepinit',
     WIKI: 'wiki',
+    AOSP: 'aosp',
 };
 // Hook event names
 export const HOOK_EVENTS = {
