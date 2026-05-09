@@ -27,6 +27,7 @@ import { sharedMemoryTools } from '../tools/shared-memory-tools.js';
 import { deepinitManifestTool } from '../tools/deepinit-manifest.js';
 import { wikiTools } from '../tools/wiki-tools.js';
 import { skillsTools } from '../tools/skills-tools.js';
+import { aospTools } from '../tools/aosp-tools.js';
 import { z } from 'zod';
 
 /** Minimal tool definition shape shared across all tool families. */
@@ -58,6 +59,7 @@ export const allTools: ToolDef[] = [
   deepinitManifestTool as unknown as ToolDef,
   ...(wikiTools as unknown as ToolDef[]),
   ...(skillsTools as unknown as ToolDef[]),
+  ...(aospTools as unknown as ToolDef[]),
 ];
 
 // ---------------------------------------------------------------------------
