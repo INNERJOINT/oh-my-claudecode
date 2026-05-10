@@ -31,15 +31,30 @@ function nextId(): number {
  */
 function parseSseResponse(body: string): unknown {
   const lines = body.split('\n');
+  const events: unknown[] = [];
   for (const line of lines) {
     if (line.startsWith('data: ')) {
       const data = line.slice(6).trim();
       if (data) {
-        return JSON.parse(data);
+        try {
+          events.push(JSON.parse(data));
+        } catch {
+          // skip malformed SSE data lines
+        }
       }
     }
   }
-  // Fallback: try parsing the whole body as JSON
+
+  // Return the last JSON-RPC response (has 'id' + 'result'/'error'), skipping notifications
+  for (let i = events.length - 1; i >= 0; i--) {
+    const evt = events[i] as Record<string, unknown>;
+    if (evt && typeof evt === 'object' && 'id' in evt && ('result' in evt || 'error' in evt)) {
+      return evt;
+    }
+  }
+
+  // Fallback: return last event or try parsing whole body
+  if (events.length > 0) return events[events.length - 1];
   return JSON.parse(body);
 }
 
