@@ -86,18 +86,18 @@ mkdir -p /tmp/jira-analyze-<KEY>/extracted
    # Step 2: Decode via file redirection
    base64 -d < /tmp/jira-analyze-<KEY>/<filename>.b64 > /tmp/jira-analyze-<KEY>/<filename>.zip
    ```
-   Then decompress using `log_unboxer unpack`:
+   Then decompress using `log-unboxer unpack`:
    ```bash
-   log_unboxer unpack /tmp/jira-analyze-<KEY>/<filename>.zip --output-dir /tmp/jira-analyze-<KEY>/extracted/
+   log-unboxer unpack /tmp/jira-analyze-<KEY>/<filename>.zip --output-dir /tmp/jira-analyze-<KEY>/extracted/
    ```
-   If `log_unboxer unpack` is not available, fall back to:
+   If `log-unboxer unpack` is not available, fall back to:
    ```bash
    unzip -o /tmp/jira-analyze-<KEY>/<filename>.zip -d /tmp/jira-analyze-<KEY>/extracted/
    ```
 
-   **Method B (fallback): `log_unboxer download --sn`** — if no zip attachments are found, check the issue description for a device serial number (SN). If found:
+   **Method B (fallback): `log-unboxer download --sn`** — if no zip attachments are found, check the issue description for a device serial number (SN). If found:
    ```bash
-   log_unboxer download --sn <SERIAL_NUMBER> --output-dir /tmp/jira-analyze-<KEY>/extracted/ --days 90
+   log-unboxer download --sn <SERIAL_NUMBER> --output-dir /tmp/jira-analyze-<KEY>/extracted/ --days 90
    ```
    This downloads the last 90 days of device logs directly from the log server.
 
@@ -509,8 +509,8 @@ Update state at each phase boundary for resumability. On resume, read state via 
 <Tool_Usage>
 - `jira_get_issue` — fetch issue details and attachment metadata (mcp-atlassian)
 - `jira_download_attachments` — primary attachment download method (mcp-atlassian)
-- `log_unboxer unpack` — decompress downloaded zip/archive files (preferred over plain unzip)
-- `log_unboxer download --sn` — fallback: download device logs by serial number from log server (last 90 days). Do NOT use `--url`.
+- `log-unboxer unpack` — decompress downloaded zip/archive files (preferred over plain unzip)
+- `log-unboxer download --sn` — fallback: download device logs by serial number from log server (last 90 days). Do NOT use `--url`.
 - `jira_add_comment` — post RCA report as comment on JIRA issue (mcp-atlassian)
 - `sourcepilot` — search AOSP source for crash-related code (always, not conditional)
 - `state_write` / `state_read` / `state_clear` — phase persistence (mode="jira-analyze")
@@ -572,7 +572,7 @@ Why bad: AOSP search must run for ALL hypotheses, not just the highest-ranked on
 
 <Guardrails>
 **Must have:**
-- **log_unboxer 优先**: 解压日志必须优先使用 `log_unboxer unpack`，仅当 log_unboxer 不可用时才回退到 `unzip`
+- **log-unboxer 优先**: 解压日志必须优先使用 `log-unboxer unpack`，仅当 log-unboxer 不可用时才回退到 `unzip`
 - mcp-atlassian for JIRA access (not jira-cli)
 - sourcepilot for AOSP source (always, not conditional) — **Phase 4 AOSP 源码分析是必选阶段**，除非十分确认问题与 AOSP 源码完全无关才可跳过
 - aosp-investigator subagent for both Phase 4 (AOSP context) and Phase 5 (hypothesis investigation)
