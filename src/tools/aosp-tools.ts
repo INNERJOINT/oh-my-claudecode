@@ -3,13 +3,13 @@
  *
  * Proxy tool that forwards code search requests to a remote AOSP MCP server.
  * Uses MCP Streamable HTTP protocol (session-based with SSE responses).
- * Endpoint: http://10.23.12.96:8888/mcp/
+ * Endpoint: configurable via AOSP_MCP_URL env var
  */
 
 import { z } from 'zod';
 import type { ToolDefinition } from './types.js';
 
-const AOSP_MCP_URL = process.env.AOSP_MCP_URL || 'http://10.23.12.96:8888/mcp/';
+const AOSP_MCP_URL = (process.env.AOSP_MCP_URL || 'http://10.23.12.96:8888/mcp').replace(/\/+$/, '');
 const AOSP_MCP_KEY = process.env.AOSP_MCP_KEY || 'sk-abc123';
 
 interface McpToolResult {
@@ -21,6 +21,9 @@ interface McpToolResult {
 let sessionId: string | null = null;
 let sessionInitPromise: Promise<string> | null = null;
 let requestCounter = 0;
+
+// Detected server schema format: if true, arguments must be wrapped in {inp: {...}}
+let needsInpWrapping: boolean | null = null;
 
 function nextId(): number {
   return ++requestCounter;
@@ -135,6 +138,33 @@ async function getSession(): Promise<string> {
 }
 
 /**
+ * Detect whether the remote server requires arguments wrapped in {inp: {...}}.
+ * Checks the inputSchema of the first tool from tools/list — if its top-level
+ * properties contain only an "inp" key with a $ref, the server uses inp wrapping.
+ */
+async function detectInpWrapping(): Promise<boolean> {
+  if (needsInpWrapping !== null) return needsInpWrapping;
+
+  const result = await callAospMcp('tools/list', {});
+  const tools = (result as { tools?: Array<{ inputSchema?: { properties?: Record<string, unknown> } }> }).tools;
+
+  if (!tools || tools.length === 0) {
+    needsInpWrapping = false;
+    return false;
+  }
+
+  const firstSchema = tools[0].inputSchema;
+  const props = firstSchema?.properties;
+  if (props && Object.keys(props).length === 1 && 'inp' in props) {
+    needsInpWrapping = true;
+  } else {
+    needsInpWrapping = false;
+  }
+
+  return needsInpWrapping;
+}
+
+/**
  * Call a method on the AOSP MCP server with session management.
  * Automatically retries once with a fresh session on 400/404 (stale session).
  */
@@ -150,6 +180,7 @@ async function callAospMcp(method: string, params: Record<string, unknown>): Pro
     if (res.status === 400 || res.status === 404) {
       // Session may be stale — reset and retry once
       sessionId = null;
+      needsInpWrapping = null;
       const newSid = await getSession();
       const retry = await mcpPost(
         { jsonrpc: '2.0', id: nextId(), method, params },
@@ -183,10 +214,10 @@ export const aospCodeSearchTool: ToolDefinition<{
   arguments: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodUnion<[z.ZodString, z.ZodNumber, z.ZodBoolean]>>>;
 }> = {
   name: 'sourcepilot',
-  description: 'Search AOSP (Android Open Source Project) codebase via remote MCP server. Use the "tool" param to specify which remote tool to call (e.g. "search_code", "search_symbol", "search_file"), and "arguments" for tool-specific parameters.',
+  description: 'Search AOSP (Android Open Source Project) codebase via remote MCP server. Use the "tool" param to specify which remote tool to call (e.g. "list_projects", "search_code", "search_symbol", "search_file"), and "arguments" for tool-specific parameters. The tool auto-detects whether the server requires arguments wrapped in an "inp" object.',
   annotations: { readOnlyHint: true, openWorldHint: true },
   schema: {
-    tool: z.string().describe('Remote AOSP MCP tool name to invoke (e.g. "search_code", "search_symbol", "search_file", "search_regex", "list_repos", "get_file_content", "list_tools")'),
+    tool: z.string().describe('Remote AOSP MCP tool name to invoke (e.g. "list_projects", "search_code", "search_symbol", "search_file", "search_regex", "list_repos", "get_file_content", "list_tools")'),
     arguments: z.record(z.string(), z.union([z.string(), z.number(), z.boolean()])).optional().describe('Arguments to pass to the remote tool as key-value pairs'),
   },
   handler: async (args) => {
@@ -198,9 +229,12 @@ export const aospCodeSearchTool: ToolDefinition<{
         };
       }
 
+      const useInp = await detectInpWrapping();
+      const toolArguments = useInp ? { inp: args.arguments ?? {} } : (args.arguments ?? {});
+
       const result = await callAospMcp('tools/call', {
         name: args.tool,
-        arguments: args.arguments ?? {},
+        arguments: toolArguments,
       });
 
       return {

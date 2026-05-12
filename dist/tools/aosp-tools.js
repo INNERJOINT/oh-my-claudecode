@@ -3,15 +3,17 @@
  *
  * Proxy tool that forwards code search requests to a remote AOSP MCP server.
  * Uses MCP Streamable HTTP protocol (session-based with SSE responses).
- * Endpoint: http://10.23.12.96:8888/mcp/
+ * Endpoint: configurable via AOSP_MCP_URL env var
  */
 import { z } from 'zod';
-const AOSP_MCP_URL = process.env.AOSP_MCP_URL || 'http://10.23.12.96:8888/mcp/';
+const AOSP_MCP_URL = (process.env.AOSP_MCP_URL || 'http://10.23.12.96:8888/mcp').replace(/\/+$/, '');
 const AOSP_MCP_KEY = process.env.AOSP_MCP_KEY || 'sk-abc123';
 // Session management — lazily initialized, reused across calls
 let sessionId = null;
 let sessionInitPromise = null;
 let requestCounter = 0;
+// Detected server schema format: if true, arguments must be wrapped in {inp: {...}}
+let needsInpWrapping = null;
 function nextId() {
     return ++requestCounter;
 }
@@ -20,15 +22,30 @@ function nextId() {
  */
 function parseSseResponse(body) {
     const lines = body.split('\n');
+    const events = [];
     for (const line of lines) {
         if (line.startsWith('data: ')) {
             const data = line.slice(6).trim();
             if (data) {
-                return JSON.parse(data);
+                try {
+                    events.push(JSON.parse(data));
+                }
+                catch {
+                    // skip malformed SSE data lines
+                }
             }
         }
     }
-    // Fallback: try parsing the whole body as JSON
+    // Return the last JSON-RPC response (has 'id' + 'result'/'error'), skipping notifications
+    for (let i = events.length - 1; i >= 0; i--) {
+        const evt = events[i];
+        if (evt && typeof evt === 'object' && 'id' in evt && ('result' in evt || 'error' in evt)) {
+            return evt;
+        }
+    }
+    // Fallback: return last event or try parsing whole body
+    if (events.length > 0)
+        return events[events.length - 1];
     return JSON.parse(body);
 }
 /**
@@ -97,6 +114,30 @@ async function getSession() {
     return sessionInitPromise;
 }
 /**
+ * Detect whether the remote server requires arguments wrapped in {inp: {...}}.
+ * Checks the inputSchema of the first tool from tools/list — if its top-level
+ * properties contain only an "inp" key with a $ref, the server uses inp wrapping.
+ */
+async function detectInpWrapping() {
+    if (needsInpWrapping !== null)
+        return needsInpWrapping;
+    const result = await callAospMcp('tools/list', {});
+    const tools = result.tools;
+    if (!tools || tools.length === 0) {
+        needsInpWrapping = false;
+        return false;
+    }
+    const firstSchema = tools[0].inputSchema;
+    const props = firstSchema?.properties;
+    if (props && Object.keys(props).length === 1 && 'inp' in props) {
+        needsInpWrapping = true;
+    }
+    else {
+        needsInpWrapping = false;
+    }
+    return needsInpWrapping;
+}
+/**
  * Call a method on the AOSP MCP server with session management.
  * Automatically retries once with a fresh session on 400/404 (stale session).
  */
@@ -107,6 +148,7 @@ async function callAospMcp(method, params) {
         if (res.status === 400 || res.status === 404) {
             // Session may be stale — reset and retry once
             sessionId = null;
+            needsInpWrapping = null;
             const newSid = await getSession();
             const retry = await mcpPost({ jsonrpc: '2.0', id: nextId(), method, params }, newSid);
             if (retry.status !== 200) {
@@ -128,10 +170,10 @@ async function callAospMcp(method, params) {
 }
 export const aospCodeSearchTool = {
     name: 'sourcepilot',
-    description: 'Search AOSP (Android Open Source Project) codebase via remote MCP server. Use the "tool" param to specify which remote tool to call (e.g. "search_code", "search_symbol", "search_file"), and "arguments" for tool-specific parameters.',
+    description: 'Search AOSP (Android Open Source Project) codebase via remote MCP server. Use the "tool" param to specify which remote tool to call (e.g. "list_projects", "search_code", "search_symbol", "search_file"), and "arguments" for tool-specific parameters. The tool auto-detects whether the server requires arguments wrapped in an "inp" object.',
     annotations: { readOnlyHint: true, openWorldHint: true },
     schema: {
-        tool: z.string().describe('Remote AOSP MCP tool name to invoke (e.g. "search_code", "search_symbol", "search_file", "search_regex", "list_repos", "get_file_content", "list_tools")'),
+        tool: z.string().describe('Remote AOSP MCP tool name to invoke (e.g. "list_projects", "search_code", "search_symbol", "search_file", "search_regex", "list_repos", "get_file_content", "list_tools")'),
         arguments: z.record(z.string(), z.union([z.string(), z.number(), z.boolean()])).optional().describe('Arguments to pass to the remote tool as key-value pairs'),
     },
     handler: async (args) => {
@@ -142,9 +184,11 @@ export const aospCodeSearchTool = {
                     content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
                 };
             }
+            const useInp = await detectInpWrapping();
+            const toolArguments = useInp ? { inp: args.arguments ?? {} } : (args.arguments ?? {});
             const result = await callAospMcp('tools/call', {
                 name: args.tool,
-                arguments: args.arguments ?? {},
+                arguments: toolArguments,
             });
             return {
                 content: result.content

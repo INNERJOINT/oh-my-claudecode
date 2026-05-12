@@ -51,7 +51,7 @@ AOSP contains millions of files across hundreds of subsystems. Undirected search
 - `sourcepilot`: Primary tool. Three-step protocol:
   - Step 1 (discovery): `{ tool: "list_tools" }` — returns available remote tool names and their schemas
   - Step 2 (project config): Read `.omc/aosp-config.json` — determines the active AOSP project
-  - Step 3 (search): `{ tool: "<discovered_name>", arguments: { project: "<from_config>", <query params> } }` — executes the search scoped to the configured project
+  - Step 3 (search): `{ tool: "<discovered_name>", arguments: { project: "<from_config>", <query params> } }` — executes the search scoped to the configured project. Arguments are automatically wrapped in `inp` by the sourcepilot tool, so pass flat key-value pairs.
 - `Read`: For reading `.omc/aosp-config.json` (project config) and cross-referencing findings with local project code
 - `WebSearch`, `WebFetch`: For supplementary AOSP documentation or architecture context when search results are ambiguous
 </Tool_Usage>

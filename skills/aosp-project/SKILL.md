@@ -51,7 +51,7 @@ AOSP MCP server unreachable. Check AOSP_MCP_URL and AOSP_MCP_KEY environment var
 
 ### Step 3: Discover Project Listing Tool
 
-From the `list_tools` result, find the tool that lists available projects (expected name: `list_projects` or similar).
+From the `list_tools` result, find the tool that lists available projects (expected name: `list_projects`).
 
 If no project-listing tool is found, abort with:
 ```
@@ -61,7 +61,7 @@ Write {"project": "<project-name>"} to .omc/aosp-config.json
 
 ### Step 4: Fetch and Display Projects
 
-Call `sourcepilot(tool: "<discovered_project_list_tool>")` to fetch all available projects.
+Call `sourcepilot(tool: "<discovered_project_list_tool>", arguments: {})` to fetch all available projects. The `sourcepilot` tool auto-detects whether the remote server requires arguments wrapped in an `inp` object, so always pass flat key-value arguments.
 
 Display as a numbered list:
 
@@ -120,7 +120,7 @@ Display the result prominently:
 
 ## Tool Usage
 
-- `sourcepilot`: MCP discovery (`list_tools`) and project listing (discovered tool name)
+- `sourcepilot`: MCP discovery (`list_tools`) and project listing (`list_projects`). Arguments are automatically wrapped in `inp` by the sourcepilot tool.
 - `Read`: Read current config from `.omc/aosp-config.json`
 - `Write`: Save config to `.omc/aosp-config.json`
 - `AskUserQuestion`: Interactive project selection

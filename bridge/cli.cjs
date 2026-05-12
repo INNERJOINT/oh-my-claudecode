@@ -75400,24 +75400,36 @@ No events recorded.`
 var traceTools = [traceTimelineTool, traceSummaryTool, sessionSearchTool];
 
 // src/tools/aosp-tools.ts
-var AOSP_MCP_URL = process.env.AOSP_MCP_URL || "http://10.23.12.96:8888/mcp/";
+var AOSP_MCP_URL = (process.env.AOSP_MCP_URL || "http://10.23.12.96:8888/mcp").replace(/\/+$/, "");
 var AOSP_MCP_KEY = process.env.AOSP_MCP_KEY || "sk-abc123";
 var sessionId = null;
 var sessionInitPromise = null;
 var requestCounter = 0;
+var needsInpWrapping = null;
 function nextId() {
   return ++requestCounter;
 }
 function parseSseResponse(body) {
   const lines = body.split("\n");
+  const events = [];
   for (const line of lines) {
     if (line.startsWith("data: ")) {
       const data = line.slice(6).trim();
       if (data) {
-        return JSON.parse(data);
+        try {
+          events.push(JSON.parse(data));
+        } catch {
+        }
       }
     }
   }
+  for (let i = events.length - 1; i >= 0; i--) {
+    const evt = events[i];
+    if (evt && typeof evt === "object" && "id" in evt && ("result" in evt || "error" in evt)) {
+      return evt;
+    }
+  }
+  if (events.length > 0) return events[events.length - 1];
   return JSON.parse(body);
 }
 async function mcpPost(payload, sid) {
@@ -75476,6 +75488,23 @@ async function getSession() {
   }
   return sessionInitPromise;
 }
+async function detectInpWrapping() {
+  if (needsInpWrapping !== null) return needsInpWrapping;
+  const result = await callAospMcp("tools/list", {});
+  const tools = result.tools;
+  if (!tools || tools.length === 0) {
+    needsInpWrapping = false;
+    return false;
+  }
+  const firstSchema = tools[0].inputSchema;
+  const props = firstSchema?.properties;
+  if (props && Object.keys(props).length === 1 && "inp" in props) {
+    needsInpWrapping = true;
+  } else {
+    needsInpWrapping = false;
+  }
+  return needsInpWrapping;
+}
 async function callAospMcp(method, params) {
   let sid = await getSession();
   const doCall = async (currentSid) => {
@@ -75485,6 +75514,7 @@ async function callAospMcp(method, params) {
     );
     if (res2.status === 400 || res2.status === 404) {
       sessionId = null;
+      needsInpWrapping = null;
       const newSid = await getSession();
       const retry = await mcpPost(
         { jsonrpc: "2.0", id: nextId(), method, params },
@@ -75509,10 +75539,10 @@ async function callAospMcp(method, params) {
 }
 var aospCodeSearchTool = {
   name: "sourcepilot",
-  description: 'Search AOSP (Android Open Source Project) codebase via remote MCP server. Use the "tool" param to specify which remote tool to call (e.g. "search_code", "search_symbol", "search_file"), and "arguments" for tool-specific parameters.',
+  description: 'Search AOSP (Android Open Source Project) codebase via remote MCP server. Use the "tool" param to specify which remote tool to call (e.g. "list_projects", "search_code", "search_symbol", "search_file"), and "arguments" for tool-specific parameters. The tool auto-detects whether the server requires arguments wrapped in an "inp" object.',
   annotations: { readOnlyHint: true, openWorldHint: true },
   schema: {
-    tool: external_exports.string().describe('Remote AOSP MCP tool name to invoke (e.g. "search_code", "search_symbol", "search_file", "search_regex", "list_repos", "get_file_content", "list_tools")'),
+    tool: external_exports.string().describe('Remote AOSP MCP tool name to invoke (e.g. "list_projects", "search_code", "search_symbol", "search_file", "search_regex", "list_repos", "get_file_content", "list_tools")'),
     arguments: external_exports.record(external_exports.string(), external_exports.union([external_exports.string(), external_exports.number(), external_exports.boolean()])).optional().describe("Arguments to pass to the remote tool as key-value pairs")
   },
   handler: async (args) => {
@@ -75523,9 +75553,11 @@ var aospCodeSearchTool = {
           content: [{ type: "text", text: JSON.stringify(result2, null, 2) }]
         };
       }
+      const useInp = await detectInpWrapping();
+      const toolArguments = useInp ? { inp: args.arguments ?? {} } : args.arguments ?? {};
       const result = await callAospMcp("tools/call", {
         name: args.tool,
-        arguments: args.arguments ?? {}
+        arguments: toolArguments
       });
       return {
         content: result.content ? result.content.map((c) => ({ type: "text", text: c.text })) : [{ type: "text", text: JSON.stringify(result, null, 2) }]
@@ -78146,7 +78178,8 @@ var DISABLE_TOOLS_GROUP_MAP = {
   "shared-memory": TOOL_CATEGORIES.SHARED_MEMORY,
   "deepinit": TOOL_CATEGORIES.DEEPINIT,
   "deepinit-manifest": TOOL_CATEGORIES.DEEPINIT,
-  "wiki": TOOL_CATEGORIES.WIKI
+  "wiki": TOOL_CATEGORIES.WIKI,
+  "aosp": TOOL_CATEGORIES.AOSP
 };
 function parseDisabledGroups(envValue) {
   const disabled = /* @__PURE__ */ new Set();
