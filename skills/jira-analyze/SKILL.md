@@ -394,6 +394,7 @@ Report format:
 3. **Build the 7-section Chinese report** and save to `.omc/specs/jira-analyze-{issue_key}.md`:
 
 ```markdown
+<!-- Downstream dependency: jira-aftersales skill detects reports by this title format. Do not change without updating jira-aftersales. -->
 # 根因分析报告: {issue_key} — {issue_title}
 
 **生成时间:** {date}

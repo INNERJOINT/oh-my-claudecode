@@ -119,6 +119,8 @@ const SKILL_PROTECTION = {
     'ralph-init': 'medium',
     release: 'medium',
     ccg: 'medium',
+    'jira-analyze': 'medium',
+    'jira-aftersales': 'medium',
     // === Heavy protection (long-running, 10 reinforcements) ===
     deepinit: 'heavy',
 };

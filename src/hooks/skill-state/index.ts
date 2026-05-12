@@ -147,6 +147,9 @@ const SKILL_PROTECTION: Record<string, SkillProtectionLevel> = {
   release: 'medium',
   ccg: 'medium',
 
+  'jira-analyze': 'medium',
+  'jira-aftersales': 'medium',
+
   // === Heavy protection (long-running, 10 reinforcements) ===
   deepinit: 'heavy',
 };

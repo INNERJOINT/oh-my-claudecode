@@ -1,29 +1,17 @@
-# oh-my-claudecode v4.13.8: add optional --project
+# oh-my-claudecode v4.13.9: Maintenance Release
 
 ## Release Notes
 
-Release with **1 new feature** across **0 merged PRs**.
-
-### Highlights
-
-- **feat(jira-analyze): add optional --project flag for AOSP project override**
-
-### New Features
-
-- **feat(jira-analyze): add optional --project flag for AOSP project override**
-
-### Refactoring
-
-- **refactor(aosp-plan): remove --codex option**
+Maintenance release with internal improvements.
 
 ### Stats
 
-- **0 PRs merged** | **1 new feature** | **0 bug fixes** | **0 security/hardening improvements** | **0 other changes**
+- **0 PRs merged** | **0 new features** | **0 bug fixes** | **0 security/hardening improvements** | **0 other changes**
 
 ### Install / Update
 
 ```bash
-npm install -g oh-my-claude-sisyphus@4.13.8
+npm install -g oh-my-claude-sisyphus@4.13.9
 ```
 
 Or reinstall the plugin:
@@ -31,4 +19,4 @@ Or reinstall the plugin:
 claude /install-plugin oh-my-claudecode
 ```
 
-**Full Changelog**: https://github.com/Yeachan-Heo/oh-my-claudecode/compare/v4.13.7...v4.13.8
+**Full Changelog**: https://github.com/Yeachan-Heo/oh-my-claudecode/compare/v4.13.8...v4.13.9
