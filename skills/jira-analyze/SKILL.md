@@ -1,7 +1,7 @@
 ---
 name: jira-analyze
 description: Android bug root-cause analysis via JIRA logs, AOSP source search, and parallel hypothesis investigation. Report in Chinese, posted as JIRA comment.
-argument-hint: <JIRA URL or issue key, e.g. SPFB-535>
+argument-hint: <JIRA URL or issue key> [--project <name>]
 triggers:
   - "jira analyze"
   - "jira_analyze"
@@ -33,7 +33,8 @@ Automates Android bug root-cause analysis by fetching JIRA issue details via mcp
 
 ## Phase 1: Initialize
 
-1. **Parse `{{ARGUMENTS}}`** to extract the issue key:
+1. **Parse `{{ARGUMENTS}}`** to extract the issue key and optional flags:
+   - Extract `--project <value>` if present (pattern `--project\s+(\S+)`); store as project override (or null if absent). Strip the flag from arguments before issue key parsing.
    - URL pattern: extract key from `https://<domain>/browse/<KEY>` via regex
    - Direct key pattern: validate `^[A-Z][A-Z0-9_]+-\d+$`
    - If neither matches, abort with: "Could not parse JIRA issue key from input. Provide a URL (https://jira.example.com/browse/PROJ-123) or key (PROJ-123)."
@@ -42,10 +43,12 @@ Automates Android bug root-cause analysis by fetching JIRA issue details via mcp
    - JIRA: call `jira_get_issue(issue_key=<KEY>, fields="summary")` — if fails, abort with "mcp-atlassian unreachable. Check JIRA_URL, JIRA_USERNAME, JIRA_API_TOKEN env vars."
    - AOSP: call `sourcepilot(tool="list_tools")` — if fails, abort with "sourcepilot MCP unreachable. Check AOSP_MCP_URL and AOSP_MCP_KEY env vars."
 
-3. **Display active AOSP project**: Read `.omc/aosp-config.json`:
-   - If configured: display `**🔍 AOSP Project: <project_name>**` prominently
-   - If not configured: display `**⚠ 未配置 AOSP 项目** — 搜索将不限定项目范围。运行 /oh-my-claudecode:aosp-project 设置项目。`
-   (The `aosp-investigator` subagent reads this config and passes `project` to search calls automatically.)
+3. **Display active AOSP project**:
+   - If `--project` override was provided: display `**🔍 AOSP Project: <name> (命令行指定)**` and use this value for all subsequent phases. Skip reading `.omc/aosp-config.json`.
+   - Otherwise, read `.omc/aosp-config.json`:
+     - If configured: display `**🔍 AOSP Project: <project_name>**` prominently
+     - If not configured: display `**⚠ 未配置 AOSP 项目** — 搜索将不限定项目范围。运行 /oh-my-claudecode:aosp-project 设置项目。`
+   (When no `--project` override is provided, the `aosp-investigator` subagent reads this config and passes `project` to search calls automatically. When `--project` is provided, the override is passed explicitly in subagent prompts — see Phase 4 and Phase 5.)
 
 4. **Initialize state**:
 ```
@@ -57,7 +60,8 @@ state_write(mode="jira-analyze", active=true, current_phase="initialize", state=
   "log_file_types": "{}",
   "anomaly_count": "0",
   "hypothesis_count": "0",
-  "report_path": null
+  "report_path": null,
+  "project_override": "<name>|null"
 })
 ```
 
@@ -264,7 +268,9 @@ Group search targets into 2-3 clusters by subsystem, then spawn one aosp-investi
 Agent(
   subagent_type="oh-my-claudecode:aosp-investigator",
   model="sonnet",
-  prompt="Search AOSP source code for the following crash-related classes/functions from JIRA issue <KEY>.
+  prompt="[If --project override is active, prepend: **AOSP Project Override:** Use project `<name>` for ALL sourcepilot search calls. Do NOT read `.omc/aosp-config.json` — the project has been specified explicitly via CLI flag.]
+
+Search AOSP source code for the following crash-related classes/functions from JIRA issue <KEY>.
 
 Search targets:
 <list of class names, function names, native libraries from anomalies>
@@ -342,7 +348,9 @@ Spawn one agent per hypothesis (max 3). Each agent:
 Agent(
   subagent_type="oh-my-claudecode:aosp-investigator",
   model="sonnet",
-  prompt="Investigate this Android crash hypothesis for JIRA issue <KEY>:
+  prompt="[If --project override is active, prepend: **AOSP Project Override:** Use project `<name>` for ALL sourcepilot search calls. Do NOT read `.omc/aosp-config.json` — the project has been specified explicitly via CLI flag.]
+
+Investigate this Android crash hypothesis for JIRA issue <KEY>:
 
 Hypothesis: <hypothesis_title>
 
@@ -486,7 +494,8 @@ Embed these handlers throughout all phases:
     "log_file_types": "{\"filename\": \"logcat|tombstone|anr|kernel|other\"}",
     "anomaly_count": "0",
     "hypothesis_count": "0",
-    "report_path": "string|null"
+    "report_path": "string|null",
+    "project_override": "string|null"
   }
 }
 ```
