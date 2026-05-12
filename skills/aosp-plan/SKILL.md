@@ -1,6 +1,6 @@
 ---
 name: aosp-plan
-description: AOSP investigation-driven planning with parallel code search and optional Codex integration
+description: AOSP investigation-driven planning with parallel code search
 argument-hint: <AOSP investigation query>
 pipeline: [aosp-plan, ralph]
 next-skill: ralph
@@ -10,21 +10,18 @@ level: 4
 
 # AOSP Plan Skill
 
-Investigation-first AOSP planning. Decomposes queries into facets, spawns parallel `aosp-investigator` subagents, optionally integrates Codex lanes, synthesizes all findings, and produces an evidence-backed plan saved to `.omc/plans/`.
+Investigation-first AOSP planning. Decomposes queries into facets, spawns parallel `aosp-investigator` subagents, synthesizes all findings, and produces an evidence-backed plan saved to `.omc/plans/`.
 
 ## Usage
 
 ```
 /oh-my-claudecode:aosp-plan "query about AOSP code"
 /oh-my-claudecode:aosp-plan --agents 5 "query"
-/oh-my-claudecode:aosp-plan --codex "query"
-/oh-my-claudecode:aosp-plan --agents 4 --codex "query"
 ```
 
 ## Flags
 
 - `--agents N`: Number of parallel investigator subagents (default: 3, max: 5)
-- `--codex`: Enable additional Codex investigation lanes via `omc ask codex`
 - `--deliberate`: Force deliberate mode for high-risk AOSP changes. Adds pre-mortem (3 failure scenarios) and expanded test plan. Auto-enables when query involves: SELinux policy, Binder/AIDL interfaces, CTS/VTS tests, public/@SystemApi changes, init/boot sequence, Treble boundaries, kernel/DT changes, or multi-partition modifications.
 - `--interactive`: Enable user prompts at synthesis review and final approval. Without this flag, the workflow outputs the final plan and stops (no auto-execution).
 
@@ -84,51 +81,25 @@ Agent(
 
 Cap at 5 agents regardless of `--agents` value.
 
-### Step 4: Codex Lanes (--codex only)
+### Step 4: Synthesis
 
-If `--codex` flag is set, spawn additional investigation lanes for each facet via Codex. These run in parallel with the Claude investigators and are additive (not counted against the agent cap):
+Merge all investigation results:
 
-```bash
-omc ask codex "Analyze AOSP code for: <facet description>. Focus on: <specific aspects>. Report file paths, code patterns, and architectural notes."
-```
-
-Codex artifacts land in `.omc/artifacts/ask/codex-*.md`.
-
-### Step 5: Codex Result Normalization (--codex only)
-
-Read all Codex artifacts from `.omc/artifacts/ask/codex-*.md`. Normalize each into the same structured format as Claude investigator results:
-
-```markdown
-### Codex Findings: <facet>
-
-**Source:** Codex analysis
-**Findings:**
-- <finding with file path and context>
-- <finding with file path and context>
-
-**Architectural Notes:**
-- <observation about code structure, design patterns, or AOSP conventions>
-```
-
-### Step 6: Synthesis
-
-Merge all investigation results (Claude investigators + Codex findings if applicable):
-
-- Deduplicate overlapping findings across sources
-- Resolve conflicts between sources (prefer AOSP source-based evidence)
+- Deduplicate overlapping findings across investigators
+- Resolve conflicts between investigators (prefer AOSP source-based evidence)
 - Rank findings by relevance and evidence strength
 - Note gaps where investigation was inconclusive or returned no results
 
-### Step 6.5: Synthesis Review (--interactive only)
+### Step 4.5: Synthesis Review (--interactive only)
 
 If running with `--interactive`, use `AskUserQuestion` to present the synthesis results with these options:
 - **Proceed to plan generation** (Recommended) — generate the structured plan
 - **Request additional investigation** — spawn more investigators for identified gaps
 - **Refine scope** — narrow or broaden the investigation, return to Step 2
 
-If NOT running with `--interactive`, automatically proceed to Step 7.
+If NOT running with `--interactive`, automatically proceed to Step 5.
 
-### Step 7: Plan Generation
+### Step 5: Plan Generation
 
 Generate a structured plan based on investigation evidence. The plan MUST include an AOSP-DR (Decision Rationale) section that articulates explicit reasoning, not just steps.
 
@@ -215,7 +186,7 @@ In **deliberate mode** (triggered by `--deliberate` or auto-detected high-risk s
 | Observability | [Logcat / dumpsys / perfetto] |
 ```
 
-### Step 7.5: Quality Gate — Architect + Critic Review
+### Step 5.5: Quality Gate — Architect + Critic Review
 
 Review the generated plan for AOSP-specific quality. This step runs automatically (not gated by `--interactive`).
 
@@ -248,7 +219,7 @@ Quality criteria:
 Critic MUST reject: uncited AOSP file references, unverifiable acceptance criteria, missing @hide API risk flags, mixed AOSP version references without acknowledgment.
 
 **c. Re-review loop** (max 3 iterations):
-If Critic rejects: collect feedback → revise plan (re-run Step 7) → Architect → Critic → repeat.
+If Critic rejects: collect feedback → revise plan (re-run Step 5) → Architect → Critic → repeat.
 If 3 iterations reached without approval: present best version to user via `AskUserQuestion`.
 
 **d. Apply improvements**:
@@ -265,7 +236,7 @@ Final plan output MUST include an **Architecture Decision Record** section appen
 - **Follow-ups:** [Post-implementation verification actions]
 ```
 
-### Step 8: Save
+### Step 6: Save
 
 Derive a slug from the query (lowercase, spaces→hyphens, strip special chars). Save to:
 
@@ -277,13 +248,13 @@ Confirm the save path to the user after writing.
 
 If NOT running with `--interactive`, call `state_clear(mode="aosp-plan")` after confirming the save path. The skill stops here in non-interactive mode.
 
-### Step 9: Execution Approval (--interactive only)
+### Step 7: Execution Approval (--interactive only)
 
 Use `AskUserQuestion` to present the saved plan with these options:
 - **Approve and implement via team** (Recommended) — proceed to implementation via coordinated parallel team agents
 - **Approve and execute via ralph** — proceed to implementation via ralph sequential execution
 - **Clear context and implement** — compact context first, then ralph (recommended when context is large after investigation)
-- **Request changes** — return to Step 7 with user feedback
+- **Request changes** — return to Step 5 with user feedback
 - **Reject** — discard plan, call `state_clear(mode="aosp-plan")`, stop
 
 On approval: Call `state_write(mode="aosp-plan", active=false)` before invoking the execution skill. Do NOT use `state_clear` — its cancel signal disables stop-hook enforcement for the newly launched mode.
@@ -315,25 +286,24 @@ The stop hook uses `aosp-plan` state to enforce continuation during parallel inv
 
 - **On entry**: `state_write(mode="aosp-plan", active=true)` before Step 1
 - **On MCP failure**: `state_clear(mode="aosp-plan")` — terminal exit
-- **On non-interactive completion** (Step 8): `state_clear(mode="aosp-plan")` — plan output only, no execution follows
-- **On execution handoff** (Step 9 approval): `state_write(mode="aosp-plan", active=false)` — preserves stop-hook enforcement for the execution mode
-- **On rejection** (Step 9 reject): `state_clear(mode="aosp-plan")` — terminal exit
+- **On non-interactive completion** (Step 6): `state_clear(mode="aosp-plan")` — plan output only, no execution follows
+- **On execution handoff** (Step 7 approval): `state_write(mode="aosp-plan", active=false)` — preserves stop-hook enforcement for the execution mode
+- **On rejection** (Step 7 reject): `state_clear(mode="aosp-plan")` — terminal exit
 
 Critical: Never use `state_clear` before launching an execution mode. The 30-second cancel signal disables stop-hook enforcement for ALL modes.
 
 ## Configuration
 
 - Maximum 5 parallel `aosp-investigator` agents (matches `external-context` precedent)
-- Codex lanes are additive (not counted against the agent limit)
 - Keyword trigger: `"aosp plan"` or `"aosp_plan"`
 - State mode name: `aosp-plan` (for state_write/state_clear calls)
-- Non-interactive mode (default): outputs plan and stops after Step 8
-- Interactive mode (`--interactive`): adds synthesis review (Step 6.5) and execution approval (Step 9) gates
+- Non-interactive mode (default): outputs plan and stops after Step 6
+- Interactive mode (`--interactive`): adds synthesis review (Step 4.5) and execution approval (Step 7) gates
 
 ## Tool Usage
 
-- Use `Agent(subagent_type="oh-my-claudecode:architect", ...)` for Architect review in Step 7.5a
-- Use `Agent(subagent_type="oh-my-claudecode:critic", ...)` for Critic evaluation in Step 7.5b
+- Use `Agent(subagent_type="oh-my-claudecode:architect", ...)` for Architect review in Step 5.5a
+- Use `Agent(subagent_type="oh-my-claudecode:critic", ...)` for Critic evaluation in Step 5.5b
 - **CRITICAL**: Architect and Critic calls MUST be sequential, never parallel. Always await the Architect result before issuing the Critic call.
 - Quality gate runs automatically on all plans (not gated by `--interactive`)
 - Re-review loop capped at 3 iterations (narrower scope than general plans)
