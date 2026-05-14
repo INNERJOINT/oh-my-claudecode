@@ -125,128 +125,34 @@ Save the result to /tmp/jira-analyze-<KEY>/file-classification.json"
 
 6. **Update state**: `current_phase: "data-collected"`, persist `log_file_types` (from classification result) and `attachment_meta`.
 
-## Phase 3: Log Parsing and Timeline Construction (via Subagents)
+## Phase 3: Log Parsing and Timeline Construction (via aosp-log-parser Agent)
 
-Delegate log parsing to parallel subagents — one per log type. Each subagent parses its log type independently and writes results to temp files. The lead then merges results.
+Delegate all log parsing to a single `aosp-log-parser` agent. This agent handles file classification reading, all 4 log type parsers, and the merge/synthesis step internally.
 
-### Spawn Log Parser Subagents
-
-Read `log_file_types` from state. Group files by type, then spawn one subagent per type that has files (max 4: logcat, tombstone, ANR, kernel). **Spawn all in parallel.**
+### Spawn aosp-log-parser Agent
 
 ```
 Agent(
-  subagent_type="oh-my-claudecode:executor",
+  subagent_type="oh-my-claudecode:aosp-log-parser",
   model="sonnet",
-  prompt="Parse Android LOGCAT log files for JIRA issue <KEY>.
+  prompt="Parse Android log files for JIRA issue <KEY>.
 
-Files to parse (in /tmp/jira-analyze-<KEY>/extracted/):
-<list of logcat files>
+Temp directory: /tmp/jira-analyze-<KEY>/
+Source files directory: /tmp/jira-analyze-<KEY>/extracted/
 
-Logcat line regex: ^(\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}\.\d{3})\s+(\d+)\s+(\d+)\s+([VDIWEFS])\s+(.+?):\s+(.*)$
+The file classification is at /tmp/jira-analyze-<KEY>/file-classification.json.
 
-For each file:
-1. Extract: timestamp, PID, TID, level, tag, message
-2. Flag entries with level E (error) or F (fatal) as anomalies
-3. For each anomaly, extract the associated stack trace (next N lines after the anomaly marker)
+Follow your Parsing Protocol: read the classification, parse each log type using parallel tool calls where possible, then merge into unified timeline.md and anomalies.md.
 
-Output:
-- Save timeline events to /tmp/jira-analyze-<KEY>/parsed-logcat.md as a markdown table: | Time | PID | TID | Level | Tag | Message |
-- Save anomalies to /tmp/jira-analyze-<KEY>/anomalies-logcat.md with stack traces
-- Deduplicate repeated crashes (same stack trace within 1-second window)"
+Report the total anomaly count at the end of your response."
 )
 ```
 
-```
-Agent(
-  subagent_type="oh-my-claudecode:executor",
-  model="sonnet",
-  prompt="Parse Android TOMBSTONE files for JIRA issue <KEY>.
+### Verify Output
 
-Files to parse (in /tmp/jira-analyze-<KEY>/extracted/):
-<list of tombstone files>
+After the agent completes, check that `/tmp/jira-analyze-<KEY>/timeline.md` and `/tmp/jira-analyze-<KEY>/anomalies.md` exist. If not, abort with "Log parsing failed — timeline or anomalies output missing."
 
-Extract from each file:
-- `pid: \d+, tid: \d+, name: .*` — crashed process
-- `signal \d+ \(SIG\w+\)` — signal info
-- `backtrace:` section — stack frames with `#\d+\s+pc\s+([0-9a-f]+)\s+(.+)` pattern
-- `Build fingerprint:` — device/build info
-
-Output:
-- Save timeline events to /tmp/jira-analyze-<KEY>/parsed-tombstone.md as a markdown table: | Time | Source | Severity | Event |
-- Save anomalies to /tmp/jira-analyze-<KEY>/anomalies-tombstone.md with full stack traces and signal info"
-)
-```
-
-```
-Agent(
-  subagent_type="oh-my-claudecode:executor",
-  model="sonnet",
-  prompt="Parse Android ANR TRACE files for JIRA issue <KEY>.
-
-Files to parse (in /tmp/jira-analyze-<KEY>/extracted/):
-<list of ANR files>
-
-Extract from each file:
-- `\"main\" prio=\d+ tid=\d+` — main thread state
-- `at (.+)\((.+:\d+)\)` — stack frames
-- `- waiting to lock` / `- locked` — lock contention info
-
-Output:
-- Save timeline events to /tmp/jira-analyze-<KEY>/parsed-anr.md as a markdown table: | Time | Source | Severity | Event |
-- Save anomalies to /tmp/jira-analyze-<KEY>/anomalies-anr.md with main thread stack and lock contention details"
-)
-```
-
-```
-Agent(
-  subagent_type="oh-my-claudecode:executor",
-  model="sonnet",
-  prompt="Parse Android KERNEL LOG files for JIRA issue <KEY>.
-
-Files to parse (in /tmp/jira-analyze-<KEY>/extracted/):
-<list of kernel files>
-
-Kernel log line regex: ^\[\s*(\d+\.\d+)\]\s+(.*)$
-
-For each file:
-1. Extract: timestamp (seconds since boot), message
-2. Flag lines containing `panic`, `Oops`, `BUG`, `Unable to handle` as anomalies
-3. For each anomaly, extract surrounding context (5 lines before and after)
-
-Output:
-- Save timeline events to /tmp/jira-analyze-<KEY>/parsed-kernel.md as a markdown table: | Time | Source | Severity | Event |
-- Save anomalies to /tmp/jira-analyze-<KEY>/anomalies-kernel.md with context"
-)
-```
-
-### Merge and Synthesize (via Subagent)
-
-After all parser subagents complete, spawn a synthesis subagent:
-
-```
-Agent(
-  subagent_type="oh-my-claudecode:executor",
-  model="sonnet",
-  prompt="Merge parsed Android log data into a unified timeline for JIRA issue <KEY>.
-
-Input files (read all that exist in /tmp/jira-analyze-<KEY>/):
-- parsed-logcat.md, parsed-tombstone.md, parsed-anr.md, parsed-kernel.md
-- anomalies-logcat.md, anomalies-tombstone.md, anomalies-anr.md, anomalies-kernel.md
-
-Tasks:
-1. Normalize all timestamps to a common epoch (use logcat timestamps as reference where available; kernel timestamps are seconds-since-boot — offset them using the earliest logcat timestamp if possible)
-2. Merge all timeline events and sort chronologically
-3. Merge all anomalies, deduplicate repeated crashes (same stack trace within 1-second window)
-4. Mark anomalies with severity tags: FATAL, ERROR, WARN
-
-Output:
-- Save /tmp/jira-analyze-<KEY>/timeline.md — full chronological timeline as markdown table
-- Save /tmp/jira-analyze-<KEY>/anomalies.md — deduplicated anomalies with stack traces, sorted by severity then time
-- Print the total anomaly count at the end of your response"
-)
-```
-
-Update state: `current_phase: "parsed"`, `anomaly_count: <N>` (from synthesis agent's output).
+Update state: `current_phase: "parsed"`, `anomaly_count: <N>` (from the agent's summary).
 
 ## Phase 4: AOSP Source Context Analysis
 
@@ -515,9 +421,9 @@ Update state at each phase boundary for resumability. On resume, read state via 
 - `sourcepilot` — search AOSP source for crash-related code (always, not conditional)
 - `state_write` / `state_read` / `state_clear` — phase persistence (mode="jira-analyze")
 - `Agent(subagent_type="Explore", model="haiku")` — file classification (Phase 2)
-- `Agent(subagent_type="oh-my-claudecode:executor", model="sonnet")` — log parsing per type + timeline merge (Phase 3)
-- `Agent(subagent_type="oh-my-claudecode:analyst", model="sonnet")` — hypothesis generation (Phase 4)
-- `Agent(subagent_type="oh-my-claudecode:aosp-investigator", model="sonnet")` — parallel hypothesis investigation lanes (Phase 4)
+- `Agent(subagent_type="oh-my-claudecode:aosp-log-parser", model="sonnet")` — log parsing and timeline construction (Phase 3)
+- `Agent(subagent_type="oh-my-claudecode:analyst", model="sonnet")` — hypothesis generation (Phase 5)
+- `Agent(subagent_type="oh-my-claudecode:aosp-investigator", model="sonnet")` — AOSP source search (Phase 4) and parallel hypothesis investigation (Phase 5)
 - `Write` tool — save base64 files and final report
 - `Bash` — base64 decode (file-based), unzip, temp directory management
 </Tool_Usage>
@@ -531,8 +437,8 @@ User: /jira-analyze https://jira.cvte.com/browse/SPFB-535
 [Phase 2] Fetched issue. Found 2 zip attachments (logs_2026.zip, bugreport.zip).
          Decompressed → 12 files. Spawned Explore subagent for classification.
          Result: 3 logcat, 2 tombstone, 1 ANR, 1 kernel, 5 other.
-[Phase 3] Spawned 4 parser subagents in parallel (logcat, tombstone, ANR, kernel).
-         All complete. Spawned merge subagent → 847 timeline events, 23 anomalies.
+[Phase 3] Spawned aosp-log-parser agent.
+         Completed → 847 timeline events, 23 anomalies.
          Top anomalies: SIGSEGV in libsurfaceflinger.so, ANR in SystemUI, kernel BUG at mm/slub.c.
 [Phase 4] AOSP Source Context: Spawned 2 aosp-investigator agents in parallel.
          Cluster 1 (SurfaceFlinger/SystemUI): Found SurfaceFlinger::onMessageReceived null check gap,
@@ -550,7 +456,7 @@ User: /jira-analyze https://jira.cvte.com/browse/SPFB-535
 [Phase 5] Report saved to .omc/specs/jira-analyze-SPFB-535.md (Chinese, 7 sections).
          Posted report as JIRA comment on SPFB-535.
 ```
-Why good: All exploration delegated to subagents. File classification (Explore/haiku), log parsing (4 executor/sonnet in parallel), timeline merge (executor/sonnet), hypothesis generation (analyst/sonnet), AOSP investigation (3 aosp-investigator/sonnet in parallel). Lead only orchestrates. Report in Chinese, posted to JIRA.
+Why good: All exploration delegated to subagents. File classification (Explore/haiku), log parsing and timeline construction (aosp-log-parser/sonnet), hypothesis generation (analyst/sonnet), AOSP investigation (3 aosp-investigator/sonnet in parallel). Lead only orchestrates. Report in Chinese, posted to JIRA.
 </Good>
 
 <Bad>
