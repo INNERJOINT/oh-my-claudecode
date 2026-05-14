@@ -35,9 +35,31 @@ Automates Android bug root-cause analysis by fetching JIRA issue details via mcp
 
 1. **Parse `{{ARGUMENTS}}`** to extract the issue key and optional flags:
    - Extract `--project <value>` if present (pattern `--project\s+(\S+)`); store as project override (or null if absent). Strip the flag from arguments before issue key parsing.
+   - Extract `--fresh` if present (boolean flag). Strip from arguments.
    - URL pattern: extract key from `https://<domain>/browse/<KEY>` via regex
    - Direct key pattern: validate `^[A-Z][A-Z0-9_]+-\d+$`
    - If neither matches, abort with: "Could not parse JIRA issue key from input. Provide a URL (https://jira.example.com/browse/PROJ-123) or key (PROJ-123)."
+
+1b. **Resume check** (before MCP health checks):
+   - If `--fresh` flag is present: `state_clear(mode="jira-analyze")` + `rm -rf /tmp/jira-analyze-<KEY>`, then proceed as fresh run.
+   - Otherwise, read existing state: `state_read(mode="jira-analyze")`
+   - If state exists AND `active == true` AND `state.issue_key` matches current `<KEY>`:
+     - Display: "检测到未完成的分析 (phase: <current_phase>)。从断点恢复..."
+     - Validate temp directory exists: `ls /tmp/jira-analyze-<KEY>`
+     - Validate phase artifacts before skipping:
+       - Skip to Phase 3: verify `/tmp/jira-analyze-<KEY>/extracted/` has files
+       - Skip to Phase 4: verify `anomalies.md` contains at least one `### Anomaly` or `### Rank` heading
+       - Skip to Phase 5: verify `aosp-context.md` contains at least one `###` section heading
+       - Skip to Phase 6: verify `hypotheses.md` contains at least one `## Hypothesis` heading AND at least one `investigation-*.md` contains a `**Confidence:**` line
+     - Resume from the NEXT phase after `current_phase`:
+       - `initialize` → start Phase 2
+       - `data-collected` → start Phase 3
+       - `parsed` → start Phase 4
+       - `aosp-searched` → start Phase 5
+       - `investigated` → start Phase 6
+     - If temp directory missing OR artifact validation fails: restart from the failed phase (not Phase 1)
+   - If state exists but `issue_key` does NOT match: clear old state, start fresh
+   - If no state exists: start fresh (normal flow)
 
 2. **MCP health checks** (run both in parallel):
    - JIRA: call `jira_get_issue(issue_key=<KEY>, fields="summary")` — if fails, abort with "mcp-atlassian unreachable. Check JIRA_URL, JIRA_USERNAME, JIRA_API_TOKEN env vars."
@@ -90,10 +112,14 @@ mkdir -p /tmp/jira-analyze-<KEY>/extracted
    ```bash
    log-unboxer unpack /tmp/jira-analyze-<KEY>/<filename>.zip --output-dir /tmp/jira-analyze-<KEY>/extracted/
    ```
-   If `log-unboxer unpack` is not available, fall back to:
+   If `log-unboxer unpack` fails, abort with: "log-unboxer unpack failed. Check that log-unboxer is installed and accessible." Do NOT fall back to `unzip` or any other decompression tool.
+
+   **Cleanup intermediate files** (per-attachment, only after successful extraction):
    ```bash
-   unzip -o /tmp/jira-analyze-<KEY>/<filename>.zip -d /tmp/jira-analyze-<KEY>/extracted/
+   rm -f /tmp/jira-analyze-<KEY>/<filename>.b64
+   rm -f /tmp/jira-analyze-<KEY>/<filename>.zip
    ```
+   Guard: only delete if `log-unboxer unpack` exit code was 0 for that specific attachment. If unpack fails, preserve that attachment's intermediates for debugging.
 
    **Method B (fallback): `log-unboxer download --sn`** — if no zip attachments are found, check the issue description for a device serial number (SN). If found:
    ```bash
@@ -101,30 +127,9 @@ mkdir -p /tmp/jira-analyze-<KEY>/extracted
    ```
    This downloads the last 90 days of device logs directly from the log server.
 
-4. **Classify extracted files via subagent**:
+4. **Update state**: `current_phase: "data-collected"`, persist `attachment_meta`.
 
-```
-Agent(
-  subagent_type="Explore",
-  model="haiku",
-  prompt="Classify Android log files in /tmp/jira-analyze-<KEY>/extracted/.
-
-For each file, determine its type by scanning the filename AND the first 20 lines of content:
-- `logcat*`, `*logcat*`, files starting with `--------- beginning of` → **logcat**
-- `tombstone_*`, files starting with `*** *** ***` → **tombstone**
-- `*traces.txt`, `*anr*`, files containing `\"main\" prio=` → **ANR trace**
-- `*dmesg*`, `*kmsg*`, `*kernel*` → **kernel log**
-- Everything else → **other**
-
-Output a JSON mapping: {\"filename\": \"logcat|tombstone|anr|kernel|other\", ...}
-Save the result to /tmp/jira-analyze-<KEY>/file-classification.json"
-)
-```
-
-5. **Read classification result** from `/tmp/jira-analyze-<KEY>/file-classification.json`.
-
-6. **Update state**: `current_phase: "data-collected"`, persist `log_file_types` (from classification result) and `attachment_meta`.
-
+<!-- SYNC: skills/_shared/rca-pipeline.md#phase-3 -->
 ## Phase 3: Log Parsing and Timeline Construction (via aosp-log-parser Agent)
 
 Delegate all log parsing to a single `aosp-log-parser` agent. This agent handles file classification reading, all 4 log type parsers, and the merge/synthesis step internally.
@@ -140,9 +145,7 @@ Agent(
 Temp directory: /tmp/jira-analyze-<KEY>/
 Source files directory: /tmp/jira-analyze-<KEY>/extracted/
 
-The file classification is at /tmp/jira-analyze-<KEY>/file-classification.json.
-
-Follow your Parsing Protocol: read the classification, parse each log type using parallel tool calls where possible, then merge into unified timeline.md and anomalies.md.
+Classify files if needed (generate file-classification.json if missing), then follow your Parsing Protocol: read the classification, parse each log type using parallel tool calls where possible, then merge into unified timeline.md and anomalies.md.
 
 Report the total anomaly count at the end of your response."
 )
@@ -154,6 +157,9 @@ After the agent completes, check that `/tmp/jira-analyze-<KEY>/timeline.md` and 
 
 Update state: `current_phase: "parsed"`, `anomaly_count: <N>` (from the agent's summary).
 
+<!-- /SYNC -->
+
+<!-- SYNC: skills/_shared/rca-pipeline.md#phase-4 -->
 ## Phase 4: AOSP Source Context Analysis
 
 Before hypothesis investigation, perform a dedicated AOSP source search based on crash signatures extracted from anomalies. This phase is **mandatory** — skip only if you are absolutely certain the issue has zero relevance to AOSP code (e.g., purely app-layer business logic with no framework/system interaction).
@@ -204,6 +210,9 @@ Report for each target:
 
 Update state: `current_phase: "aosp-searched"`.
 
+<!-- /SYNC -->
+
+<!-- SYNC: skills/_shared/rca-pipeline.md#phase-5 -->
 ## Phase 5: Hypothesis Generation and Parallel Investigation
 
 ### Hypothesis Generation (via Subagent)
@@ -224,6 +233,8 @@ Generate 2-3 root-cause hypotheses. Each hypothesis must have:
 - Title (one-line description)
 - Supporting anomaly references (which timeline events support it)
 - Relevant AOSP source context (which AOSP code paths are involved, error handling gaps found in Phase 4)
+- **Covered by Phase 4 context:** list aosp-context.md sections whose class/function names appear in this hypothesis's stack frames or supporting anomalies (these are already searched — investigators will NOT re-search them)
+- **New investigation targets:** code paths NOT already in aosp-context.md that need searching
 - Key stack frames to investigate in AOSP source code
 
 Prioritize hypotheses by:
@@ -235,6 +246,8 @@ Save output to /tmp/jira-analyze-<KEY>/hypotheses.md in this format:
 
 ## Hypothesis 1: <title>
 **Supporting anomalies:** <list of anomaly references>
+**Covered by Phase 4 context:** <list of already-searched targets from aosp-context.md>
+**New investigation targets:** <list of targets NOT in aosp-context.md>
 **Stack frames to investigate:**
 - <frame1>
 - <frame2>
@@ -248,7 +261,7 @@ Read the generated hypotheses from `/tmp/jira-analyze-<KEY>/hypotheses.md`.
 
 ### Parallel Investigation via Agent Tool
 
-Spawn one agent per hypothesis (max 3). Each agent:
+Spawn one agent per hypothesis (max 3). Each agent receives Phase 4 context to avoid redundant searches:
 
 ```
 Agent(
@@ -260,17 +273,25 @@ Investigate this Android crash hypothesis for JIRA issue <KEY>:
 
 Hypothesis: <hypothesis_title>
 
-Stack frames to investigate:
-<stack_frames>
+## Pre-existing AOSP Context (from Phase 4 — DO NOT re-search these)
+
+The following AOSP source findings are already available. Use them directly as evidence.
+Only perform NEW sourcepilot searches for code paths NOT covered below.
+
+<Include aosp-context.md sections whose search target class/function names appear in
+the hypothesis's 'Stack frames to investigate' or 'Supporting anomalies'. Filter by
+string match of class/function names.>
+
+## Incremental Investigation Task
+
+Search ONLY for:
+- Code paths listed in 'New investigation targets' above
+- Caller/callee relationships of already-found functions
+- Error propagation paths between known crash points
+- Concurrency/timing interactions between components
 
 Timeline context:
 <relevant_timeline_events>
-
-Your task:
-1. Use sourcepilot — first call {tool: 'list_tools'} to discover available tools
-2. Search for each crash-related function/class in AOSP source
-3. Find the code path that leads to the crash
-4. Look for known issues, TODOs, or error handling gaps in the source
 
 Report format:
 - AOSP source files and line numbers relevant to this crash
@@ -291,6 +312,9 @@ Report format:
 - If an agent fails or times out, mark that hypothesis as "investigation incomplete" — do not fail the entire skill
 - Update state: `current_phase: "investigated"`, `hypothesis_count: <N>`
 
+<!-- /SYNC -->
+
+<!-- SYNC: skills/_shared/rca-pipeline.md#phase-6 -->
 ## Phase 6: Synthesis and Report
 
 1. **Read investigation results** from `/tmp/jira-analyze-<KEY>/investigation-*.md` and `/tmp/jira-analyze-<KEY>/aosp-context.md`
@@ -364,6 +388,8 @@ Report format:
 2. {action}
 ```
 
+<!-- /SYNC -->
+
 5. **Post report as JIRA comment**: `jira_add_comment(issue_key=<KEY>, body=<report_content>)` — post the full report content as a comment on the JIRA issue. If this fails, warn but do not abort (the local report file is still available).
 
 6. **Finalize state and cleanup**:
@@ -415,17 +441,17 @@ Update state at each phase boundary for resumability. On resume, read state via 
 <Tool_Usage>
 - `jira_get_issue` — fetch issue details and attachment metadata (mcp-atlassian)
 - `jira_download_attachments` — primary attachment download method (mcp-atlassian)
-- `log-unboxer unpack` — decompress downloaded zip/archive files (preferred over plain unzip)
+- `log-unboxer unpack` — decompress downloaded zip/archive files (only allowed decompression tool)
 - `log-unboxer download --sn` — fallback: download device logs by serial number from log server (last 90 days). Do NOT use `--url`.
 - `jira_add_comment` — post RCA report as comment on JIRA issue (mcp-atlassian)
 - `sourcepilot` — search AOSP source for crash-related code (always, not conditional)
 - `state_write` / `state_read` / `state_clear` — phase persistence (mode="jira-analyze")
-- `Agent(subagent_type="Explore", model="haiku")` — file classification (Phase 2)
+- `Agent(subagent_type="oh-my-claudecode:aosp-log-parser", model="sonnet")` — log parsing, file classification, and timeline construction (Phase 3)
 - `Agent(subagent_type="oh-my-claudecode:aosp-log-parser", model="sonnet")` — log parsing and timeline construction (Phase 3)
 - `Agent(subagent_type="oh-my-claudecode:analyst", model="sonnet")` — hypothesis generation (Phase 5)
 - `Agent(subagent_type="oh-my-claudecode:aosp-investigator", model="sonnet")` — AOSP source search (Phase 4) and parallel hypothesis investigation (Phase 5)
 - `Write` tool — save base64 files and final report
-- `Bash` — base64 decode (file-based), unzip, temp directory management
+- `Bash` — base64 decode (file-based), temp directory management, intermediate file cleanup
 </Tool_Usage>
 
 <Examples>
@@ -435,7 +461,7 @@ User: /jira-analyze https://jira.cvte.com/browse/SPFB-535
 
 [Phase 1] Parsed key: SPFB-535. MCP health checks pass (jira + aosp).
 [Phase 2] Fetched issue. Found 2 zip attachments (logs_2026.zip, bugreport.zip).
-         Decompressed → 12 files. Spawned Explore subagent for classification.
+         Decompressed → 12 files.
          Result: 3 logcat, 2 tombstone, 1 ANR, 1 kernel, 5 other.
 [Phase 3] Spawned aosp-log-parser agent.
          Completed → 847 timeline events, 23 anomalies.
@@ -456,7 +482,7 @@ User: /jira-analyze https://jira.cvte.com/browse/SPFB-535
 [Phase 5] Report saved to .omc/specs/jira-analyze-SPFB-535.md (Chinese, 7 sections).
          Posted report as JIRA comment on SPFB-535.
 ```
-Why good: All exploration delegated to subagents. File classification (Explore/haiku), log parsing and timeline construction (aosp-log-parser/sonnet), hypothesis generation (analyst/sonnet), AOSP investigation (3 aosp-investigator/sonnet in parallel). Lead only orchestrates. Report in Chinese, posted to JIRA.
+Why good: All exploration delegated to subagents. Log parsing and file classification (aosp-log-parser/sonnet), hypothesis generation (analyst/sonnet), AOSP investigation (3 aosp-investigator/sonnet in parallel). Lead only orchestrates. Report in Chinese, posted to JIRA.
 </Good>
 
 <Bad>
@@ -478,7 +504,7 @@ Why bad: AOSP search must run for ALL hypotheses, not just the highest-ranked on
 
 <Guardrails>
 **Must have:**
-- **log-unboxer 优先**: 解压日志必须优先使用 `log-unboxer unpack`，仅当 log-unboxer 不可用时才回退到 `unzip`
+- **log-unboxer 唯一**: 下载和解压日志必须且只能使用 `log-unboxer`（`unpack` 或 `download --sn`），禁止使用 `unzip`、`tar`、`7z` 或任何其他解压工具
 - mcp-atlassian for JIRA access (not jira-cli)
 - sourcepilot for AOSP source (always, not conditional) — **Phase 4 AOSP 源码分析是必选阶段**，除非十分确认问题与 AOSP 源码完全无关才可跳过
 - aosp-investigator subagent for both Phase 4 (AOSP context) and Phase 5 (hypothesis investigation)
@@ -494,4 +520,5 @@ Why bad: AOSP search must run for ALL hypotheses, not just the highest-ranked on
 - iOS or non-Android log parsing
 - Binary attachment processing (images, videos)
 - Base64 content piped through echo/shell arguments
+- 自行解压日志（禁止 `unzip`、`tar`、`7z` 等，必须通过 `log-unboxer`）
 </Guardrails>

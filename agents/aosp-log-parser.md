@@ -34,6 +34,21 @@ Android bug reports contain heterogeneous log formats. Logcat has timestamps and
 
 <Parsing_Protocol>
 
+## Step 0: File Classification (if needed)
+
+If `<temp_dir>/file-classification.json` does NOT exist, generate it:
+
+1. List all files in `<temp_dir>/extracted/` directory
+2. For each file, determine its type by scanning the filename AND the first 20 lines of content:
+   - `logcat*`, `*logcat*`, files starting with `--------- beginning of` → **logcat**
+   - `tombstone_*`, files starting with `*** *** ***` → **tombstone**
+   - `*traces.txt`, `*anr*`, files containing `"main" prio=` → **ANR trace**
+   - `*dmesg*`, `*kmsg*`, `*kernel*` → **kernel log**
+   - Everything else → **other**
+3. Save the classification to `<temp_dir>/file-classification.json` as JSON: `{"filename": "logcat|tombstone|anr|kernel|other", ...}`
+
+If `<temp_dir>/file-classification.json` already exists, read it directly and proceed to Step 1 (supports resume).
+
 ## Step 1: Read File Classification
 
 Read `<temp_dir>/file-classification.json` to get the mapping of filename → type.
@@ -46,7 +61,7 @@ Group files by type. Only process these four types: logcat, tombstone, anr, kern
 
 Before parsing, validate the classification (agent executes these checks via Read tool calls — no calling code required):
 
-1. **File exists**: If `<temp_dir>/file-classification.json` is missing, report error: `file-classification.json not found at <path>` and abort.
+1. **File exists**: If `<temp_dir>/file-classification.json` is missing (and Step 0 did not create it), report error: `file-classification.json not found at <path>` and abort.
 2. **Valid JSON**: If JSON parsing fails, report error with the raw first 200 characters and abort.
 3. **Valid type values**: All values MUST be one of: `logcat`, `tombstone`, `anr`, `kernel`, `other`. If an unrecognized type is found, report warning but continue (treat it as "other").
 4. **At least one parseable type**: If ALL files are classified as "other", report: `No Android log files found. All files classified as "other".` and abort.

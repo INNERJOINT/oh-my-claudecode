@@ -46,6 +46,7 @@ Both modes save the report to `.omc/specs/`.
    - `--project <value>` (pattern `--project\s+(\S+)`): Store as project override (or null if absent). Strip the flag from arguments.
    - `--title <value>` (pattern `--title\s+(.+?)(?:\s+--|\s*$)`): Store as user-provided issue description. Strip the flag.
    - `--dir <path>`: Directory containing extracted Android log files.
+   - `--fresh` (boolean flag): Force clean start. Strip from arguments.
 
    **Input path resolution**:
    1. If `--dir <path>` is provided and the path exists: use as the log directory. Set `analysis_mode = "log-based"`.
@@ -58,6 +59,27 @@ Both modes save the report to `.omc/specs/`.
         --title <description> Problem description (no-log source analysis)
         <path>                Shorthand for --dir
       ```
+
+1b. **Resume check** (after input parsing, before slug generation):
+   - If `--fresh` flag is present: `state_clear(mode="aosp-analyze")` + `rm -rf /tmp/aosp-analyze-<slug>` (if slug determinable from prior state), then proceed as fresh run.
+   - Otherwise, read existing state: `state_read(mode="aosp-analyze")`
+   - If state exists AND `active == true` AND `state.input_path` matches current input (or `state.slug` matches derived slug):
+     - Display: "检测到未完成的分析 (phase: <current_phase>)。从断点恢复..."
+     - Validate temp directory exists: `ls /tmp/aosp-analyze-<slug>`
+     - Validate phase artifacts before skipping:
+       - Skip to Phase 3: verify `/tmp/aosp-analyze-<slug>/extracted/` has files
+       - Skip to Phase 4: verify `anomalies.md` contains at least one `### Anomaly` or `### Rank` heading
+       - Skip to Phase 5: verify `aosp-context.md` contains at least one `###` section heading
+       - Skip to Phase 6: verify `hypotheses.md` contains at least one `## Hypothesis` heading AND at least one `investigation-*.md` contains a `**Confidence:**` line
+     - Resume from the NEXT phase after `current_phase`:
+       - `initialize` → start Phase 2
+       - `data-collected` → start Phase 3
+       - `parsed` → start Phase 4
+       - `aosp-searched` → start Phase 5
+       - `investigated` → start Phase 6
+     - If temp directory missing OR artifact validation fails: restart from the failed phase (not Phase 1)
+   - If state exists but input does NOT match: clear old state, start fresh
+   - If no state exists: start fresh (normal flow)
 
 2. **Generate a slug** from the input for naming temp files and reports:
    - Log-based mode: slug = basename of the directory (lowercase, special chars → hyphens)
@@ -104,33 +126,9 @@ mkdir -p /tmp/aosp-analyze-<slug>/extracted
    ```
    (Use `ln -s` if the source directory is large and on the same filesystem.)
 
-2. **Classify extracted files via subagent**:
+2. **Update state**: `current_phase: "data-collected"`.
 
-```
-Agent(
-  subagent_type="Explore",
-  model="haiku",
-  prompt="Classify Android log files in /tmp/aosp-analyze-<slug>/extracted/.
-
-For each file, determine its type by scanning the filename AND the first 20 lines of content:
-- `logcat*`, `*logcat*`, files starting with `--------- beginning of` → **logcat**
-- `tombstone_*`, files starting with `*** *** ***` → **tombstone**
-- `*traces.txt`, `*anr*`, files containing `\"main\" prio=` → **ANR trace**
-- `*dmesg*`, `*kmsg*`, `*kernel*` → **kernel log**
-- Everything else → **other**
-
-Output a JSON mapping: {\"filename\": \"logcat|tombstone|anr|kernel|other\", ...}
-Save the result to /tmp/aosp-analyze-<slug>/file-classification.json"
-)
-```
-
-3. **Read classification result** from `/tmp/aosp-analyze-<slug>/file-classification.json`.
-
-4. **Validate**: If no logcat, tombstone, ANR, or kernel files found, abort with:
-   "No Android log files found in the directory. Supported types: logcat, tombstone, ANR traces, kernel logs."
-
-5. **Update state**: `current_phase: "data-collected"`, persist `log_file_types`.
-
+<!-- SYNC: skills/_shared/rca-pipeline.md#phase-3 -->
 ## Phase 3: Log Parsing and Timeline Construction (via aosp-log-parser Agent)
 
 Delegate all log parsing to a single `aosp-log-parser` agent. This agent handles file classification reading, all 4 log type parsers, and the merge/synthesis step internally.
@@ -146,9 +144,7 @@ Agent(
 Temp directory: /tmp/aosp-analyze-<slug>/
 Source files directory: /tmp/aosp-analyze-<slug>/extracted/
 
-The file classification is at /tmp/aosp-analyze-<slug>/file-classification.json.
-
-Follow your Parsing Protocol: read the classification, parse each log type, then merge into unified timeline.md and anomalies.md.
+Classify files if needed (generate file-classification.json if missing), then follow your Parsing Protocol: read the classification, parse each log type, then merge into unified timeline.md and anomalies.md.
 
 Report the total anomaly count at the end of your response."
 )
@@ -158,6 +154,9 @@ Report the total anomaly count at the end of your response."
 
 3. **Update state**: `current_phase: "parsed"`, `anomaly_count: <N>` (from the agent's summary).
 
+<!-- /SYNC -->
+
+<!-- SYNC: skills/_shared/rca-pipeline.md#phase-4 -->
 ## Phase 4: AOSP Source Context Analysis
 
 Before hypothesis investigation, perform a dedicated AOSP source search based on crash signatures extracted from anomalies (log-based mode) or from the problem description (no-log mode). This phase is **mandatory**.
@@ -237,6 +236,9 @@ Report for each target:
 
 Update state: `current_phase: "aosp-searched"`.
 
+<!-- /SYNC -->
+
+<!-- SYNC: skills/_shared/rca-pipeline.md#phase-5 -->
 ## Phase 5: Hypothesis Generation and Parallel Investigation
 
 ### Hypothesis Generation (via Subagent)
@@ -259,6 +261,8 @@ Generate 2-3 root-cause hypotheses. Each hypothesis must have:
 - Title (one-line description)
 - Supporting anomaly references (which timeline events support it)
 - Relevant AOSP source context (which AOSP code paths are involved, error handling gaps found in Phase 4)
+- **Covered by Phase 4 context:** list aosp-context.md sections whose class/function names appear in this hypothesis's stack frames or supporting anomalies (these are already searched — investigators will NOT re-search them)
+- **New investigation targets:** code paths NOT already in aosp-context.md that need searching
 - Key stack frames to investigate in AOSP source code
 
 Prioritize hypotheses by:
@@ -270,6 +274,8 @@ Save output to /tmp/aosp-analyze-<slug>/hypotheses.md in this format:
 
 ## Hypothesis 1: <title>
 **Supporting anomalies:** <list of anomaly references>
+**Covered by Phase 4 context:** <list of already-searched targets from aosp-context.md>
+**New investigation targets:** <list of targets NOT in aosp-context.md>
 **Stack frames to investigate:**
 - <frame1>
 - <frame2>
@@ -296,6 +302,8 @@ Generate 2-3 root-cause hypotheses. Each hypothesis must have:
 - Title (one-line description)
 - Reasoning (基于 AOSP 源码中发现的哪些代码路径/错误处理缺陷推断)
 - Relevant AOSP source context (which AOSP code paths are involved)
+- **Covered by Phase 4 context:** list aosp-context.md sections already searched for this hypothesis
+- **New investigation targets:** code paths NOT in aosp-context.md that need further searching
 - Confidence: 低/中 (无日志模式下不允许标注"高"置信度)
 
 Save output to /tmp/aosp-analyze-<slug>/hypotheses.md in this format:
@@ -314,7 +322,7 @@ Read the generated hypotheses from `/tmp/aosp-analyze-<slug>/hypotheses.md`.
 
 ### Parallel Investigation via Agent Tool
 
-Spawn one agent per hypothesis (max 3). Each agent:
+Spawn one agent per hypothesis (max 3). Each agent receives Phase 4 context to avoid redundant searches:
 
 ```
 Agent(
@@ -326,17 +334,25 @@ Investigate this Android crash hypothesis for analysis <slug>:
 
 Hypothesis: <hypothesis_title>
 
-Stack frames to investigate:
-<stack_frames>
+## Pre-existing AOSP Context (from Phase 4 — DO NOT re-search these)
+
+The following AOSP source findings are already available. Use them directly as evidence.
+Only perform NEW sourcepilot searches for code paths NOT covered below.
+
+<Include aosp-context.md sections whose search target class/function names appear in
+the hypothesis's 'Stack frames to investigate' or 'Supporting anomalies'. Filter by
+string match of class/function names.>
+
+## Incremental Investigation Task
+
+Search ONLY for:
+- Code paths listed in 'New investigation targets' above
+- Caller/callee relationships of already-found functions
+- Error propagation paths between known crash points
+- Concurrency/timing interactions between components
 
 Timeline context:
 <relevant_timeline_events>
-
-Your task:
-1. Use sourcepilot — first call {tool: 'list_tools'} to discover available tools
-2. Search for each crash-related function/class in AOSP source
-3. Find the code path that leads to the crash
-4. Look for known issues, TODOs, or error handling gaps in the source
 
 Report format:
 - AOSP source files and line numbers relevant to this crash
@@ -357,6 +373,9 @@ Report format:
 - If an agent fails or times out, mark that hypothesis as "investigation incomplete" — do not fail the entire skill
 - Update state: `current_phase: "investigated"`, `hypothesis_count: <N>`
 
+<!-- /SYNC -->
+
+<!-- SYNC: skills/_shared/rca-pipeline.md#phase-6 -->
 ## Phase 6: Synthesis and Report
 
 1. **Read investigation results** from `/tmp/aosp-analyze-<slug>/investigation-*.md` and `/tmp/aosp-analyze-<slug>/aosp-context.md`
@@ -446,6 +465,8 @@ Report format:
 2. {action}
 ```
 
+<!-- /SYNC -->
+
 5. **Finalize state and cleanup**:
    - On success: `state_clear(mode="aosp-analyze")` — terminal exit
    - On error-abort: `state_write(mode="aosp-analyze", active=false, current_phase="error")` — preserves state for debugging
@@ -495,7 +516,7 @@ Update state at each phase boundary for resumability. On resume, read state via 
 <Tool_Usage>
 - `sourcepilot` — search AOSP source for crash-related code (always, not conditional)
 - `state_write` / `state_read` / `state_clear` — phase persistence (mode="aosp-analyze")
-- `Agent(subagent_type="Explore", model="haiku")` — file classification (Phase 2)
+- `Agent(subagent_type="oh-my-claudecode:aosp-log-parser", model="sonnet")` — log parsing, file classification, and timeline construction (Phase 3)
 - `Agent(subagent_type="oh-my-claudecode:aosp-log-parser", model="sonnet")` — log parsing and timeline construction (Phase 3)
 - `Agent(subagent_type="oh-my-claudecode:analyst", model="sonnet")` — hypothesis generation (Phase 5)
 - `Agent(subagent_type="oh-my-claudecode:aosp-investigator", model="sonnet")` — AOSP context search (Phase 4) + parallel hypothesis investigation (Phase 5)
@@ -510,7 +531,7 @@ User: /aosp-analyze --dir /tmp/crash-logs --title "SystemUI crash after OTA"
 
 [Phase 1] Input: directory /tmp/crash-logs. Slug: crash-logs. AOSP MCP health check pass.
           AOSP Project: android-14 (from .omc/aosp-config.json)
-[Phase 2] Copied 8 files. Spawned Explore subagent for classification.
+[Phase 2] Copied 8 files.
           Result: 2 logcat, 1 tombstone, 1 ANR, 0 kernel, 4 other.
 [Phase 3] Spawned aosp-log-parser agent.
           Completed → 312 timeline events, 7 anomalies.
