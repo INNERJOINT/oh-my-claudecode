@@ -310,7 +310,15 @@ Skill("git-commit")
 <对每个失败仓库，列出具体失败原因和 git diff 输出>
 ```
 
-将报告保存到 `.omc/aosp-autopilot-report-<slug>.md`。
+将报告保存到 `.omc/aosp-autopilot-report/<timestamp>-<task-name>.md`。
+
+**报告路径规则：**
+
+- 目录：`.omc/aosp-autopilot-report/`（不存在时自动创建）
+- 文件名格式：`<YYYYMMDD-HHmmss>-<task-name>.md`
+  - `timestamp`：执行开始时间，格式 `YYYYMMDD-HHmmss`（如 `20260515-143022`）
+  - `task-name`：从计划标题提取的简要任务名（小写、空格转连字符、去特殊字符、截断至 50 字符）
+- 示例：`.omc/aosp-autopilot-report/20260515-143022-add-nfc-hal.md`
 
 ### Step 9: 清理
 
