@@ -25,6 +25,10 @@ Documents vendor/third-party features added on top of AOSP. Takes a feature desc
 
 - `--links <url1,url2,...>`: Comma-separated GitLab MR diff or commit URLs as starting points for keyword extraction (primary input mode)
 - `--commits <hash1,hash2,...>`: Comma-separated local git commit hashes as starting points (secondary, for local-only workflows)
+- `--depth shallow|deep`: Controls investigation depth (default: `deep`)
+  - `shallow`: Phase 2 (Step 4) runs exactly 1 round with 2 agents. No convergence check is evaluated. Useful for quick overviews or when the feature scope is already well-understood.
+  - `deep`: Phase 2 runs up to 5 rounds with convergence-based termination (existing behavior, unchanged).
+- `--append`: Incremental update mode. If a previous export exists for this feature (matched by slug), load it and expand rather than overwrite. Skips Phase 1 and uses prior findings as the starting set for Phase 2.
 - Without either flag: Uses only the description text for keyword extraction
 
 ### Supported URL Formats
@@ -62,19 +66,17 @@ Abort with: `AOSP MCP server unreachable. Check AOSP_MCP_URL and AOSP_MCP_KEY en
 
 #### 2a: Fetch change data from links or commits
 
-**If `--links` provided**, parse each URL and call GitLab MCP tools:
+**If `--links` provided**, parse each URL and call GitLab MCP tools. **Process all URLs in parallel** — each URL's fetches are independent and should be issued concurrently:
 
 1. For each URL, determine type by pattern matching:
    - **MR URL** (`{host}/{project_path}/-/merge_requests/{iid}` with optional `/diffs`):
      - Extract `project_id` = `{project_path}` (e.g., `mt8781_androidu/platform/packages/modules/Connectivity`)
      - Extract `merge_request_iid` = `{iid}`
-     - Call `mcp__gitlab__get_merge_request(project_id, merge_request_iid)` → extract MR title and description
-     - Call `mcp__gitlab__get_merge_request_diffs(project_id, merge_request_iid)` → extract changed file paths (old_path, new_path) and diff content
+     - Call `mcp__gitlab__get_merge_request(project_id, merge_request_iid)` and `mcp__gitlab__get_merge_request_diffs(project_id, merge_request_iid)` **concurrently** (independent calls for the same MR) → extract MR title, description, changed file paths (old_path, new_path), and diff content
    - **Commit URL** (`{host}/{project_path}/-/commit/{sha}`):
      - Extract `project_id` = `{project_path}`
      - Extract `sha` = `{sha}`
-     - Call `mcp__gitlab__get_commit(project_id, sha)` → extract commit message
-     - Call `mcp__gitlab__get_commit_diff(project_id, sha, full_diff=true)` → extract changed file paths and diff content
+     - Call `mcp__gitlab__get_commit(project_id, sha)` and `mcp__gitlab__get_commit_diff(project_id, sha, full_diff=true)` **concurrently** → extract commit message, changed file paths, and diff content
 
 2. From fetched data, extract:
    - Changed file paths (strip extensions to get class/module names)
@@ -125,9 +127,20 @@ Collect all investigator reports. Extract unique second-level directory prefixes
 
 ### Step 4: Phase 2 — Iterative Expansion
 
+**Depth gate:** If `--depth shallow`, execute exactly 1 round (spawn 2 agents), skip convergence check, and proceed directly to Step 5. If `--depth deep` (or no flag specified), run the full loop below.
+
 Loop up to 5 rounds (max 15 total successful agent spawns across all rounds including Phase 1).
 
-Each round, spawn 2 `aosp-investigator` subagents. Pass them the accumulated findings so far and let them independently decide how to expand the search — the orchestrator provides context, not queries:
+Each round, spawn N `aosp-investigator` subagents where N is determined by discovery rate:
+- **Round 1** (first Phase 2 round): spawn 2 agents (baseline, no prior rate available)
+- **Subsequent rounds:** if the previous round discovered ≥ 5 new prefixes, spawn 3 agents; otherwise spawn 2 agents
+- **Per-round cap:** never exceed 3 agents in a single round
+- **Total cap:** 15 successful spawns across all phases (Phase 1 + Phase 2) still applies
+- **Tunable constant:** The 5-prefix scaling threshold is an initial heuristic. Adjust based on observed discovery patterns — lower it if features consistently under-explore, raise it if agent spawns are wasted on diminishing returns.
+
+When `--depth shallow` is active, dynamic scaling is moot (only 1 round executes with 2 agents).
+
+Pass them the accumulated findings so far and let them independently decide how to expand the search — the orchestrator provides context, not queries:
 
 ```
 Agent(
@@ -138,6 +151,9 @@ Agent(
   
   Previously discovered AOSP paths (DO NOT re-search these):
   <list of discovered_prefixes>
+  
+  Specific files already documented (avoid redundant searches):
+  <list of up to 50 most-referenced file paths from prior rounds, selected for prefix diversity — spread across the most distinct prefixes to maximize coverage signal>
   
   Key interfaces and classes found so far:
   <extracted interface names, class names, AIDL/HIDL definitions from prior rounds>
@@ -156,20 +172,64 @@ After each round:
 1. Collect results, extract new second-level prefixes
 2. **Convergence check:** If this round added fewer than 3 never-before-seen prefixes to `discovered_prefixes`, stop iterating
 3. **Partial failure handling:** Failed agents don't count toward the 15-spawn cap. If >50% of agents in a round fail, halt and emit partial results with warning. No retries.
-4. Emit progress to user: `Round N: +X new prefixes (total: Y unique prefixes, Z files discovered)`
+4. Emit progress to user: `Round N (M agents): +X new prefixes (total: Y unique prefixes, Z files discovered)`
+
+<!-- FUTURE: Semantic convergence (stopping when findings repeat thematically rather than
+     just by prefix count) requires a structured `layer` field in aosp-investigator output.
+     See agents/aosp-investigator.md for the prerequisite change. Until that field exists,
+     convergence remains prefix-count-based only. -->
 
 ### Step 5: Synthesis
 
 The orchestrator's only heavy-lifting phase — merge and structure all investigator reports into the final document:
 
 1. Concatenate all investigator findings across all rounds
-2. Deduplicate overlapping file paths
+2. Deduplicate findings:
+   a. **Exact path dedup:** merge entries with identical file paths (keep the richer observation)
+   b. **Overlapping snippet dedup:** if two findings reference the same file with overlapping line ranges, merge into one entry with the broader range
+   c. **Semantic dedup:** if two findings describe the same interface/class from different angles, consolidate into one entry combining both observations
 3. Group findings by second-level AOSP directory prefix (these become the "projects" in the output)
 4. For each project group: collect key interfaces, code patterns, and design decisions reported by investigators
 5. Synthesize an overall "Design Principles" section from investigators' architectural observations
 6. Map cross-project dependencies from investigators' interface-caller/implementor findings
+6b. **Adaptive template sections:**
+   - If ≤ 2 discovered project groups AND findings span a single architectural layer: use condensed output (omit summary table, fold interface mentions into project sections)
+   - If no AIDL/HIDL interfaces found: omit "关键接口" section header, fold any interface mentions into project sections
+   - If only 1 AOSP project discovered: omit the "相关AOSP项目" summary table (redundant with the single project section)
+   - If no cross-project dependencies found: omit "依赖关系" section
+   - **Always include:** 概览, Vendor修改概述, 设计原理, 各项目代码路径, 调查日志
 7. **Construct commit URLs:** For each input link's project, build browsable commit URLs using format `https://{host}/{project_path}/-/commit/{sha}`. If the input was an MR, use the MR's source commits. Include these URLs in the output under "Related Commits".
 8. Build the output document **in Chinese** using the template below
+
+### Step 5b: Append Mode (if `--append` flag)
+
+If `--append` is NOT set, skip this step entirely.
+
+1. Compute slug from description (same logic as Step 6)
+2. Check if `.omc/aosp-exports/<slug>.md` exists
+   - If not: emit `"⚠ 未找到已有导出文件，回退到完整模式。"` and proceed normally (append degrades to full mode gracefully — Phase 1 executes as usual)
+   - If exists: load the file and extract:
+     a. `discovered_prefixes` from the "相关AOSP项目" table
+     b. `last_verified` timestamp from the metadata section
+     c. All previously documented file paths
+
+3. **Staleness check:**
+   - Parse `last_verified` from the existing document's metadata section
+   - If `last_verified` is older than 30 days: emit warning to user: `"⚠ 上次验证已超过30天 ({date})。建议不使用 --append 重新完整导出。"`
+   - Proceed regardless (warning only, not blocking)
+
+4. **Inject prior context into Phase 2:**
+   - Skip Phase 1 (Step 3) entirely — use loaded prefixes as the starting set for `discovered_prefixes`
+   - In Phase 2 agent prompts, include loaded prefixes in the "Previously discovered" list
+   - Phase 2 runs normally (respecting `--depth` flag), searching only for NEW findings
+
+5. **Merge strategy:**
+   - New findings are APPENDED to existing sections (not replacing)
+   - Duplicate file paths are deduplicated (keep the newer observation)
+   - Update `last_verified` timestamp to current date
+   - Update convergence stats to reflect the append run
+
+**Known limitation:** If the AOSP codebase has undergone major directory renames or module splits since the last export, stale prefixes may send Phase 2 agents down dead paths. In this case, re-run without `--append` for a fresh full export.
 
 ### Step 6: Save
 
@@ -261,6 +321,12 @@ Skill is idempotent — re-running with the same inputs overwrites the output fi
 | {final} | {queries} | {n} | {n} | {n} |
 
 **终止原因:** {收敛 (< 3个新前缀) / 达到最大轮次 / 部分失败}
+
+## 元数据
+
+- **上次验证:** {last_verified date}
+- **更新模式:** {完整导出 / 增量追加}
+- **增量历史:** {append count, if applicable}
 ```
 
 ## Keyword Triggers
