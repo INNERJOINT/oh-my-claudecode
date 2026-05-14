@@ -1,17 +1,29 @@
-# oh-my-claudecode v4.13.9: Maintenance Release
+# oh-my-claudecode v4.13.12: add no-log mode, add aosp-log-parser with, add tool-selection matrix
 
 ## Release Notes
 
-Maintenance release with internal improvements.
+Release with **3 new features** across **0 merged PRs**.
+
+### Highlights
+
+- **feat(aosp-analyze): add no-log mode for source-only analysis**
+- **feat(agents): add aosp-log-parser with parallel parsing and validation**
+- **feat(agents): add tool-selection matrix and examples to aosp-investigator**
+
+### New Features
+
+- **feat(aosp-analyze): add no-log mode for source-only analysis**
+- **feat(agents): add aosp-log-parser with parallel parsing and validation**
+- **feat(agents): add tool-selection matrix and examples to aosp-investigator**
 
 ### Stats
 
-- **0 PRs merged** | **0 new features** | **0 bug fixes** | **0 security/hardening improvements** | **0 other changes**
+- **0 PRs merged** | **3 new features** | **0 bug fixes** | **0 security/hardening improvements** | **0 other changes**
 
 ### Install / Update
 
 ```bash
-npm install -g oh-my-claude-sisyphus@4.13.9
+npm install -g oh-my-claude-sisyphus@4.13.12
 ```
 
 Or reinstall the plugin:
@@ -19,4 +31,4 @@ Or reinstall the plugin:
 claude /install-plugin oh-my-claudecode
 ```
 
-**Full Changelog**: https://github.com/Yeachan-Heo/oh-my-claudecode/compare/v4.13.8...v4.13.9
+**Full Changelog**: https://github.com/Yeachan-Heo/oh-my-claudecode/compare/v4.13.9...v4.13.12
