@@ -17,20 +17,17 @@ Documents vendor/third-party features added on top of AOSP. Takes a feature desc
 /oh-my-claudecode:aosp-feature-export "公共DNS" --links https://gitlab.gz.cvte.cn/mt8781_androidu/platform/packages/modules/Connectivity/-/merge_requests/3/diffs
 /oh-my-claudecode:aosp-feature-export "fingerprint unlock" --links https://gitlab.gz.cvte.cn/project/path/-/commit/d2794bf5a8132dc9
 /oh-my-claudecode:aosp-feature-export "USB audio routing" --links <mr-url1>,<commit-url2>
-/oh-my-claudecode:aosp-feature-export "夜景模式" --commits abc123,def456
 /oh-my-claudecode:aosp-feature-export "USB audio routing"
 ```
 
 ## Flags
 
 - `--links <url1,url2,...>`: Comma-separated GitLab MR diff or commit URLs as starting points for keyword extraction (primary input mode)
-- `--commits <hash1,hash2,...>`: Comma-separated local git commit hashes as starting points (secondary, for local-only workflows)
 - `--depth shallow|deep`: Controls investigation depth (default: `deep`)
   - `shallow`: Phase 2 (Step 4) runs exactly 1 round with 2 agents. No convergence check is evaluated. Useful for quick overviews or when the feature scope is already well-understood.
   - `deep`: Phase 2 runs up to 5 rounds with convergence-based termination (existing behavior, unchanged).
 - `--append`: Incremental update mode. If a previous export exists for this feature (matched by slug), load it and expand rather than overwrite. Skips Phase 1 and uses prior findings as the starting set for Phase 2.
-- `--discover`: Enable related commit discovery. Queries GitLab for other recent commits in the same project(s) within the time window of user-provided commits. Requires `--links` (discovery uses project/time context from fetched MRs/commits). Opt-in due to added latency (up to 30s). If the required GitLab MCP tool (`list_commits`) is unavailable at runtime, discovery is silently skipped with a warning.
-- Without either flag: Uses only the description text for keyword extraction
+- Without flags: Uses only the description text for keyword extraction
 
 ### Supported URL Formats
 
@@ -87,20 +84,12 @@ Abort with: `AOSP MCP server unreachable. Check AOSP_MCP_URL and AOSP_MCP_KEY en
 
 3. **Error handling:** If any URL returns an error (unreachable, 404, permission denied), log it and continue with remaining URLs. If ALL URLs fail, fall back to description-only mode.
 
-**If `--commits` provided** (secondary mode for local-only workflows), run `git show --stat <hash>` for each commit:
-   - Extract changed file paths (strip extensions to get class/module names)
-   - Extract class/interface names from path components
-   - Extract noun phrases from commit messages
-   - If commits are unavailable locally, fall back to description text only
-
-#### 2a-discover: Related commit discovery (if --discover)
+#### 2a-discover: Related commit discovery
 
 **Prerequisite:** Step 2a (fetch) must complete first — discovery uses project IDs and commit dates from fetched data.
 
 **Skip conditions (any triggers silent skip):**
-- `--discover` flag not provided
-- `--links` not provided (no project context available)
-- All URL fetches in Step 2a failed (no project/date context)
+- All URL fetches in Step 2a failed AND no `--links` provided (no project/date context)
 
 **Procedure:**
 
@@ -110,6 +99,7 @@ Abort with: `AOSP MCP server unreachable. Check AOSP_MCP_URL and AOSP_MCP_KEY en
    - Determine time window: `since` = (earliest user commit date − 30 days), `until` = (latest user commit date + 7 days)
    - Query: `mcp__gitlab__list_commits(project_id, since, until, per_page=100)`
    - Budget: 1 verification call + up to 29 project queries = 30 total cap
+   - If no project context is available (no `--links`): skip discovery gracefully with `"⚠ 无项目上下文，跳过关联提交发现。"`
 
 3. **Execution bounds:**
    - **Call cap:** Maximum 30 total `list_commits` API calls (including verification). Stop querying remaining projects if cap reached.
@@ -125,7 +115,7 @@ Abort with: `AOSP MCP server unreachable. Check AOSP_MCP_URL and AOSP_MCP_KEY en
 
 1. From description text: extract noun phrases, domain terms, subsystem names
 2. Merge with keywords extracted from links/commits (if any)
-3. If discovery ran (`--discover`): merge additional keywords from discovered commit messages (noun phrases, identifiers)
+3. If discovery ran: merge additional keywords from discovered commit messages (noun phrases, identifiers)
 4. Deduplicate all keywords, cap at 10-15
 5. Group into 3 keyword groups by subsystem area (e.g., HAL-related, Framework-related, App-related)
 
@@ -227,7 +217,7 @@ The orchestrator's only heavy-lifting phase — merge and structure all investig
    - If no AIDL/HIDL interfaces found: omit "关键接口" section header, fold any interface mentions into project sections
    - If only 1 AOSP project discovered: omit the "相关AOSP项目" summary table (redundant with the single project section)
    - If no cross-project dependencies found: omit "依赖关系" section
-   - If `--discover` was not used or `discovered_commits[]` is empty: omit "发现的关联提交" section
+   - If `discovered_commits[]` is empty (no project context or no matches): omit "发现的关联提交" section
    - **Always include:** 概览, Vendor修改概述, 设计原理, 各项目代码路径, 调查日志
 7. **Construct commit URLs:** For each input link's project, build browsable commit URLs using format `https://{host}/{project_path}/-/commit/{sha}`. If the input was an MR, use the MR's source commits. Include these URLs in the output under "Related Commits".
 8. Build the output document **in Chinese** using the template below
@@ -287,6 +277,7 @@ Skill is idempotent — re-running with the same inputs overwrites the output fi
 ## 概览
 - **功能:** {description}
 - **类型:** Vendor/第三方定制功能
+- **AOSP项目:** {project_name from .omc/aosp-config.json, or "未配置"}
 - **导出日期:** {date}
 - **输入链接:** {url_list or "无"}
 - **输入提交:** {commit_list or "无"}
@@ -345,7 +336,7 @@ Skill is idempotent — re-running with the same inputs overwrites the output fi
 
 ## 发现的关联提交
 
-> 以下提交通过 `--discover` 自动发现，非用户直接提供。基于项目时间窗口和关键词匹配筛选。
+> 以下提交通过关联提交发现自动获取，非用户直接提供。基于项目时间窗口和关键词匹配筛选。
 
 | 项目 | SHA | 提交信息 | 日期 | 链接 |
 |------|-----|----------|------|------|
@@ -389,9 +380,9 @@ Skill is idempotent — re-running with the same inputs overwrites the output fi
 - Discovery max results: 20 commits (sorted by date desc)
 - Discovery keyword filter: Step 2b keyword set (10-15 terms)
 
-## Known Limitations (--discover V1)
+## Known Limitations (关联提交发现 V1)
 
 - **Multi-project:** Only searches within projects referenced by user-provided `--links` URLs. No cross-project or group-level discovery. (Future: GitLab group-level commit search or cross-reference via MR links.)
-- **Precision:** Project-scoped (not path-filtered). Keyword filtering reduces noise but may miss semantically related commits with different terminology. (Future: `--discover deep` with path-level filtering for higher precision.)
+- **Precision:** Project-scoped (not path-filtered). Keyword filtering reduces noise but may miss semantically related commits with different terminology. (Future: path-level filtering for higher precision.)
 - **Tool dependency:** Requires `mcp__gitlab__list_commits` from the GitLab MCP server. Silently skipped if unavailable.
-- **Append interaction:** Discovered commits are included in append-mode dedup (by SHA). Re-running with `--append --discover` will not duplicate previously discovered commits.
+- **Append interaction:** Discovered commits are included in append-mode dedup (by SHA). Re-running with `--append` will not duplicate previously discovered commits.
