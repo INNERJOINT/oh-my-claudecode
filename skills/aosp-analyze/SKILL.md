@@ -1,24 +1,31 @@
 ---
 name: aosp-analyze
-description: Android crash log root-cause analysis via local log files, AOSP source search, and parallel hypothesis investigation. Report in Chinese, saved locally.
-argument-hint: <log directory path> [--project <name>] [--title <description>]
+description: Android system issue root-cause analysis via AOSP source search, with optional local log files for evidence-driven analysis. Report in Chinese, saved locally.
+argument-hint: [<log directory path>] [--project <name>] --title <description>
 triggers:
   - "aosp analyze"
   - "aosp_analyze"
   - "aosp rca"
   - "analyze logs"
   - "crash analyze"
+  - "aosp source analyze"
+  - "aosp 分析"
 handoff: .omc/specs/aosp-analyze-{slug}.md
 level: 3
 ---
 
 <Purpose>
-Automates Android crash root-cause analysis from a local directory of extracted Android system logs (logcat, tombstone, ANR traces, kernel logs). Parses logs into a chronological timeline, searches AOSP source code for crash-related context, generates and investigates hypotheses in parallel, and produces a structured 7-section Chinese RCA report saved to `.omc/specs/`.
+Automates Android system issue root-cause analysis. Supports two modes:
+- **Log-based mode** (full): Accepts a directory of extracted Android system logs (logcat, tombstone, ANR traces, kernel logs). Parses logs into a chronological timeline, searches AOSP source code for crash-related context, generates and investigates hypotheses in parallel, and produces a structured 7-section Chinese RCA report.
+- **No-log mode** (logless): Accepts a text description of the problem (via `--title`). Extracts search targets from the description, searches AOSP source code directly, generates hypotheses based on source analysis, and produces the same 7-section report structure (with sections 2/3 noting the absence of log evidence).
+
+Both modes save the report to `.omc/specs/`.
 </Purpose>
 
 <Use_When>
 - User has Android crash logs (logcat, tombstone, ANR, kernel) in a local directory and wants root-cause analysis
-- User says "aosp analyze", "aosp_analyze", "aosp rca", "analyze logs", "crash analyze"
+- User describes an Android system problem and wants AOSP source-level analysis without logs
+- User says "aosp analyze", "aosp_analyze", "aosp rca", "analyze logs", "crash analyze", "aosp 分析"
 - User provides a directory path containing extracted Android log files
 - User wants to correlate Android system logs with AOSP source code
 </Use_When>
@@ -27,8 +34,7 @@ Automates Android crash root-cause analysis from a local directory of extracted 
 - Logs are from iOS or non-Android platforms
 - User wants to fetch logs from JIRA — use jira-analyze instead
 - User wants interactive conversational analysis — this produces a static report
-- User already has parsed logs and just needs AOSP source lookup — use aosp-plan directly
-- No log directory provided
+- User wants a code modification plan or implementation steps — use aosp-plan instead (aosp-plan outputs action plans; aosp-analyze outputs RCA reports)
 </Do_Not_Use_When>
 
 <Steps>
@@ -42,17 +48,20 @@ Automates Android crash root-cause analysis from a local directory of extracted 
    - `--dir <path>`: Directory containing extracted Android log files.
 
    **Input path resolution**:
-   1. If `--dir <path>` is provided and the path exists: use as the log directory.
-   2. If the first positional argument (after stripping flags) is a valid path to a directory: treat as `--dir`.
-   3. Otherwise, abort with:
+   1. If `--dir <path>` is provided and the path exists: use as the log directory. Set `analysis_mode = "log-based"`.
+   2. If the first positional argument (after stripping flags) is a valid path to a directory: treat as `--dir`. Set `analysis_mode = "log-based"`.
+   3. If no valid log directory found but `--title` is provided: Set `analysis_mode = "no-log"`. No log directory needed.
+   4. If no valid log directory AND no `--title`: abort with:
       ```
-      No valid log directory found. Provide one of:
-        --dir <path>          Directory of extracted Android logs
+      No log directory or issue description provided. Provide one of:
+        --dir <path>          Directory of extracted Android logs (log-based analysis)
+        --title <description> Problem description (no-log source analysis)
         <path>                Shorthand for --dir
       ```
 
 2. **Generate a slug** from the input for naming temp files and reports:
-   - slug = basename of the directory (lowercase, special chars → hyphens)
+   - Log-based mode: slug = basename of the directory (lowercase, special chars → hyphens)
+   - No-log mode: slug = first 40 chars of `--title` (lowercase, Chinese → pinyin initials or keep as-is, special chars → hyphens)
    - Max 40 chars, truncate if needed.
 
 3. **MCP health check**:
@@ -69,7 +78,8 @@ Automates Android crash root-cause analysis from a local directory of extracted 
 state_write(mode="aosp-analyze", active=true, current_phase="initialize", state={
   "slug": "<slug>",
   "temp_dir": "/tmp/aosp-analyze-<slug>",
-  "input_path": "<absolute path to log directory>",
+  "analysis_mode": "log-based|no-log",
+  "input_path": "<absolute path to log directory>|null",
   "issue_title": "<user-provided title or null>",
   "log_file_types": "{}",
   "anomaly_count": "0",
@@ -85,6 +95,8 @@ mkdir -p /tmp/aosp-analyze-<slug>/extracted
 ```
 
 ## Phase 2: Log Collection
+
+> **Mode gate:** If `analysis_mode == "no-log"`, skip Phase 2 and Phase 3 entirely. Update state: `current_phase: "parsed"`, then proceed directly to Phase 4.
 
 1. **Copy or symlink** files from the input directory into the working extracted directory:
    ```bash
@@ -148,15 +160,44 @@ Report the total anomaly count at the end of your response."
 
 ## Phase 4: AOSP Source Context Analysis
 
-Before hypothesis investigation, perform a dedicated AOSP source search based on crash signatures extracted from anomalies. This phase is **mandatory** — skip only if you are absolutely certain the issue has zero relevance to AOSP code (e.g., purely app-layer business logic with no framework/system interaction).
+Before hypothesis investigation, perform a dedicated AOSP source search based on crash signatures extracted from anomalies (log-based mode) or from the problem description (no-log mode). This phase is **mandatory**.
 
 ### Extract Search Targets
+
+**Log-based mode (`analysis_mode == "log-based"`):**
 
 Read `/tmp/aosp-analyze-<slug>/anomalies.md` and extract:
 - Java/native class names from stack traces (e.g., `SurfaceFlinger`, `ActivityManagerService`, `InputDispatcher`)
 - Native library names (e.g., `libsurfaceflinger.so`, `libbinder.so`)
 - Kernel subsystem identifiers (e.g., `mm/slub.c`, `drivers/gpu/`)
 - Signal/error patterns (e.g., `SIGSEGV`, `SIGABRT`, specific error messages)
+
+**No-log mode (`analysis_mode == "no-log"`):**
+
+Spawn an analyst subagent to extract structured search targets from the problem description:
+
+```
+Agent(
+  subagent_type="oh-my-claudecode:analyst",
+  model="sonnet",
+  prompt="从以下 Android 系统问题描述中提取 AOSP 源码搜索目标。
+
+问题描述: <issue_title>
+
+提取以下信息:
+1. Android 组件/服务名 (如 SurfaceFlinger, WindowManagerService, ActivityManagerService)
+2. 可能涉及的 native 库 (如 libsurfaceflinger.so, libbinder.so)
+3. 可能相关的子系统 (如 display, input, power, audio)
+4. 建议的搜索关键词 (基于问题描述中的技术术语)
+
+输出 JSON 格式:
+{\"components\": [...], \"libraries\": [...], \"subsystems\": [...], \"keywords\": [...]}
+
+保存到 /tmp/aosp-analyze-<slug>/search-targets.json"
+)
+```
+
+Read the generated `/tmp/aosp-analyze-<slug>/search-targets.json` and use its contents as search targets for the AOSP investigator agents below.
 
 ### Parallel AOSP Search (via Subagents)
 
@@ -200,7 +241,9 @@ Update state: `current_phase: "aosp-searched"`.
 
 ### Hypothesis Generation (via Subagent)
 
-Spawn an analyst subagent to generate hypotheses from the anomalies:
+Spawn an analyst subagent to generate hypotheses:
+
+**Log-based mode:**
 
 ```
 Agent(
@@ -233,6 +276,37 @@ Save output to /tmp/aosp-analyze-<slug>/hypotheses.md in this format:
 
 ## Hypothesis 2: ...
 (repeat for each hypothesis)"
+)
+```
+
+**No-log mode:**
+
+```
+Agent(
+  subagent_type="oh-my-claudecode:analyst",
+  model="sonnet",
+  prompt="基于 AOSP 源码分析结果和问题描述，生成可能的根因假设。
+
+问题描述: <issue_title>
+Read the AOSP context file: /tmp/aosp-analyze-<slug>/aosp-context.md
+
+注意: 本次分析无日志输入，假设基于源码结构推断而非日志证据。所有假设的置信度上限为"中"。
+
+Generate 2-3 root-cause hypotheses. Each hypothesis must have:
+- Title (one-line description)
+- Reasoning (基于 AOSP 源码中发现的哪些代码路径/错误处理缺陷推断)
+- Relevant AOSP source context (which AOSP code paths are involved)
+- Confidence: 低/中 (无日志模式下不允许标注"高"置信度)
+
+Save output to /tmp/aosp-analyze-<slug>/hypotheses.md in this format:
+
+## Hypothesis 1: <title>
+**Reasoning:** <基于源码的推断逻辑>
+**AOSP source context:** <相关代码路径>
+**Confidence:** 中/低
+
+## Hypothesis 2: ...
+(repeat ch hypothesis)"
 )
 ```
 
@@ -300,23 +374,32 @@ Report format:
 # 根因分析报告: {slug} — {issue_title}
 
 **生成时间:** {date}
-**输入目录:** {input_path}
+**分析模式:** {log-based: "日志驱动分析" | no-log: "无日志源码分析（基于问题描述推断）"}
+**输入目录:** {input_path or "无（无日志模式）"}
 **分析项目:** {project_name or "未限定"}
 
 ## 1. 问题概述
 {issue_description_summary — derived from anomalies or --title}
 
 ## 2. 事件时间线
+{log-based mode:}
 | 时间 | 来源 | 严重程度 | 事件 |
 |------|------|----------|------|
 | {timestamp} | {logcat/tombstone/ANR/kernel} | {INFO/WARN/ERROR/FATAL} | {description} |
 
+{no-log mode:}
+> 本次分析未提供日志文件，无事件时间线。以下分析基于问题描述和 AOSP 源码结构推断。
+
 ## 3. 关键异常/错误
+{log-based mode:}
 ### 异常 1: {title}
 - **严重程度:** {FATAL/ERROR/WARN}
 - **来源:** {file}:{line}
 - **堆栈信息:**
   {stack_trace}
+
+{no-log mode:}
+> 本次分析未提供日志文件，无异常提取。以下根因假设基于 AOSP 源码分析推断，而非日志证据。
 
 ## 4. AOSP 源码分析
 {从 Phase 4 AOSP 源码上下文分析阶段收集的完整源码分析结果}
@@ -346,6 +429,9 @@ Report format:
 | 1 | {title} | {高/中/低} | {evidence_summary} |
 
 ### 假设 1: {title} (置信度: {level})
+
+> **无日志模式约束:** 当 `analysis_mode == "no-log"` 时，所有假设的置信度上限为"中"，不允许标注"高"。报告中应注明"本分析基于源码推断，未经日志证据验证"。
+
 **支持证据:**
 - {point}
 **反对证据:**
@@ -389,9 +475,10 @@ Embed these handlers throughout all phases:
   "state": {
     "slug": "string",
     "temp_dir": "/tmp/aosp-analyze-<slug>",
-    "input_path": "string",
+    "analysis_mode": "log-based | no-log",
+    "input_path": "string | null",
     "issue_title": "string | null",
-    "log_file_types": "{\"filename\": \"logcat|tombstone|anr|kernel|other\"}",
+    "log_file_types": "{\"filename\": \"logcat|tombstone|anr|kernel|other\"} | null",
     "anomaly_count": "0",
     "hypothesis_count": "0",
     "report_path": "string | null",
@@ -441,6 +528,28 @@ User: /aosp-analyze --dir /tmp/crash-logs --title "SystemUI crash after OTA"
 [Phase 6] Report saved to .omc/specs/aosp-analyze-crash-logs.md (Chinese, 7 sections).
 ```
 Why good: All exploration delegated to subagents. Clear input (--dir). AOSP project configured. Full pipeline executed with aosp-log-parser agent handling parallel parsing.
+</Good>
+
+<Good>
+```
+User: /aosp-analyze --title "SurfaceFlinger 在旋转屏幕时崩溃"
+
+[Phase 1] 无日志模式 (no-log). Slug: surfaceflinger-rotate-crash. MCP 健康检查通过。
+          AOSP Project: android-14 (from .omc/aosp-config.json)
+[Phase 2] 跳过（无日志模式）
+[Phase 3] 跳过（无日志模式）
+[Phase 4] Spawned analyst → 从问题描述提取搜索目标: SurfaceFlinger, display rotation, WindowManagerService
+          Spawned 2 aosp-investigator agents in parallel.
+          Cluster 1 (SurfaceFlinger): Found SurfaceFlinger::setTransactionState rotation handling.
+          Cluster 2 (WindowManager): Found DisplayRotation::rotateDisplay lock ordering.
+          Saved aosp-context.md with 4 AOSP source findings.
+[Phase 5] Spawned analyst subagent → generated 2 hypotheses (置信度上限: 中):
+          H1: SurfaceFlinger rotation transaction race condition (中)
+          H2: DisplayRotation lock inversion during config change (中)
+          Spawned 2 aosp-investigator agents in parallel.
+[Phase 6] Report saved to .omc/specs/aosp-analyze-surfaceflinger-rotate-crash.md (Chinese, 7 sections).
+```
+Why good: No-log mode correctly skips Phase 2/3. Search targets extracted from --title by analyst. Confidence capped at "中". Full 7-section report generated with sections 2/3 noting absence of log evidence.
 </Good>
 
 <Good>
